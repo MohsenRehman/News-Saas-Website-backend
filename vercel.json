@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "src/app.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "src/app.js"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/v1/jobs/publish-scheduled",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+<h2>📊 Plan Usage Warning</h2>
+<p>Hi there,</p>
+<p>Your <strong>{{brandName}}</strong> account is approaching its plan limit for <strong>{{resource}}</strong>.</p>
+
+<div class="{{#if isCritical}}danger-box{{else}}warning-box{{/if}}">
+  <p>📈 Current usage: <strong>{{percentage}}%</strong> of your {{plan}} plan limit.</p>
+  {{#if isCritical}}
+  <p>🔴 You have reached or exceeded your limit. New {{resource}} creation may be blocked.</p>
+  {{else}}
+  <p>🟡 You are approaching your limit. Consider upgrading to avoid interruption.</p>
+  {{/if}}
+</div>
+
+<p style="text-align:center;">
+  <a href="{{upgradeLink}}" class="btn">Upgrade My Plan →</a>
+</p>
+
+<div class="divider"></div>
+<p style="font-size:13px; color:#999;">You are on the <strong>{{plan}}</strong> plan. Upgrading gives you more capacity and access to advanced features.</p>

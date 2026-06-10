@@ -45,26 +45,34 @@ app.use(helmet()); // Secure HTTP response headers
 app.use(cookieParser()); // Parse Cookie headers (useful for JWT refresh tokens)
 
 // Configure Dynamic Tenant CORS Origin Resolution
+const ALLOWED_ORIGINS = [
+  'https://news-saas-website-frontend.vercel.app',
+  'https://saasnews.com',
+];
+
 const corsOptions = {
   origin: async (origin, callback) => {
-    if (!origin || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
+    // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+
+    // Allow localhost in development
+    if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
       return callback(null, true);
     }
-    
+
+    // Allow explicitly whitelisted production origins
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+
     try {
       const host = origin.replace(/^https?:\/\//, '');
       const client = await resolveDomain(host);
-      
+
       if (client) {
         callback(null, true);
       } else {
-        // Safe check for Master platform host (configured in domainResolver too)
-        const cleanHost = host.split(':')[0].toLowerCase().trim();
-        if (cleanHost === 'saasnews.com') {
-          callback(null, true);
-        } else {
-          callback(new AppError(httpStatus.FORBIDDEN, 'CORS policy blocked access from this origin.'));
-        }
+        callback(new AppError(httpStatus.FORBIDDEN, 'CORS policy blocked access from this origin.'));
       }
     } catch (err) {
       callback(new AppError(httpStatus.INTERNAL_SERVER_ERROR, 'CORS resolution error.'));

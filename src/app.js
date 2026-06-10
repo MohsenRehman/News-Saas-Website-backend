@@ -160,6 +160,11 @@ app.use('/api/v1/email', require('./routes/v1/email'));
 app.use('/api/v1/comments', require('./routes/v1/comment'));
 app.use('/api/v1/newsletter', require('./routes/v1/newsletter'));
 
+// Root health-check route — returned when backend URL is visited directly
+app.get('/', (req, res) => {
+  res.status(200).json({ success: true, message: 'News SaaS API is running.' });
+});
+
 // 5. 404 Route Not Found Middleware
 app.use((req, res, next) => {
   next(new AppError(httpStatus.NOT_FOUND, `Route not found: ${req.originalUrl}`));

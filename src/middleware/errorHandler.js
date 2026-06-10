@@ -26,7 +26,8 @@ const errorHandler = (err, req, res, next) => {
   const response = {
     success: false,
     message,
-    ...(config.env === 'development' && { stack: error.stack })
+    // Never expose stack traces in production
+    ...(config.env !== 'production' && { stack: error.stack })
   };
 
   // Log details

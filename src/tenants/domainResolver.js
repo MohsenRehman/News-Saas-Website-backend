@@ -18,7 +18,13 @@ const resolveDomain = async (host) => {
   const cleanHost = host.split(':')[0].toLowerCase().trim();
 
   // 2. Return null if it is the platform landing page / master host
-  if (cleanHost === 'localhost' || cleanHost === '127.0.0.1' || cleanHost === 'saasnews.com') {
+  //    Also bypass Vercel deployment URLs (backend + frontend preview URLs)
+  if (
+    cleanHost === 'localhost' ||
+    cleanHost === '127.0.0.1' ||
+    cleanHost === 'saasnews.com' ||
+    cleanHost.endsWith('.vercel.app')
+  ) {
     return null;
   }
 

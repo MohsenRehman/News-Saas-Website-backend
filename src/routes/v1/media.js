@@ -18,7 +18,7 @@ const upload = multer({
 
 // Enforce authentication & RBAC roles globally on this router
 router.use(authenticate);
-router.use(authorize('super_admin', 'admin'));
+router.use(authorize('super_admin', 'admin', 'platform_owner'));
 
 // Upload endpoint - check storage limits atomically based on file size
 router.post('/', upload.single('file'), checkPlanLimit('maxStorage', (req) => req.file ? req.file.size : 0), mediaController.uploadFile);

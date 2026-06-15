@@ -15,6 +15,7 @@ router.post('/reset-password', validate(authValidator.resetPassword), authContro
 
 // Protected auth endpoints
 router.post('/change-password', authenticate, validate(authValidator.changePassword), authController.changePassword);
+router.put('/update-profile', authenticate, validate(authValidator.updateProfile), authController.updateProfile);
 router.get('/me', authenticate, authController.getMe);
 
 module.exports = router;

@@ -32,7 +32,8 @@ const createWebsite = {
     adminEmail: Joi.string().required().lowercase().trim().email(),
     adminPassword: Joi.string().required().min(6).messages({
       'string.min': 'Admin password must be at least 6 characters long.'
-    })
+    }),
+    logo: Joi.string().allow('', null).optional()
   })
 };
 
@@ -56,7 +57,10 @@ const updateClient = {
       .allow('', null)
       .messages({
         'string.pattern.base': 'Custom Domain must be a valid fully qualified domain name.'
-      })
+      }),
+    adminName: Joi.string().trim(),
+    adminEmail: Joi.string().lowercase().trim().email(),
+    logo: Joi.string().allow('', null).optional()
   }).min(1) // require at least one update parameter
 };
 

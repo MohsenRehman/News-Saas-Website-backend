@@ -47,6 +47,7 @@ app.use(cookieParser()); // Parse Cookie headers (useful for JWT refresh tokens)
 // Configure Dynamic Tenant CORS Origin Resolution
 const ALLOWED_ORIGINS = [
   'https://news-saas-website-frontend.vercel.app',
+  'https://news-saas-website-frontend-35ny.vercel.app',
   'https://saasnews.com',
 ];
 
@@ -165,8 +166,9 @@ app.get('/', (req, res) => {
   res.status(200).json({ success: true, message: 'News SaaS API is running.' });
 });
 
-// 5. 404 Route Not Found Middleware
+// 5. 404 Route Not Found Middleware — skip socket.io paths (handled by Socket.IO server, not Express)
 app.use((req, res, next) => {
+  if (req.path.startsWith('/socket.io')) return next();
   next(new AppError(httpStatus.NOT_FOUND, `Route not found: ${req.originalUrl}`));
 });
 
@@ -179,6 +181,115 @@ if (process.env.NODE_ENV !== 'test') {
   server = app.listen(config.port, () => {
     logger.info(`Server is running on port ${config.port} in [${config.env}] environment`);
   });
+  // Initialize Socket.IO Server
+  const socketService = require('./config/socket');
+  socketService.init(server);
+
+  // Initialize Background Workers inline for single-process environments (local dev)
+  if (config.redis.url) {
+    const { Worker } = require('bullmq');
+    const { connection } = require('./config/redis');
+    const { sendEmail } = require('./services/email.service');
+    const { QUEUES } = require('./constants/queueNames');
+    const Campaign = require('./models/Campaign');
+    const ActivityLog = require('./models/ActivityLog');
+
+    // 1. Email worker
+    const emailWorker = new Worker(
+      QUEUES.EMAIL,
+      async (job) => {
+        const { campaignId, correlationId, ...emailPayload } = job.data;
+        logger.info(`[Inline Email Worker] Processing job ${job.id} | correlationId=${correlationId} | to=${emailPayload.to}`);
+        try {
+          const isSent = await sendEmail(emailPayload);
+          if (campaignId) {
+            const field = isSent ? 'stats.sent' : 'stats.failed';
+            await Campaign.findByIdAndUpdate(campaignId, { $inc: { [field]: 1 } });
+          }
+        } catch (err) {
+          logger.error(`[Inline Email Worker] Failed to send email for job ${job.id}: ${err.message}`);
+          throw err;
+        }
+      },
+      { connection, concurrency: 5 }
+    );
+
+    emailWorker.on('completed', (job) => {
+      logger.info(`[Inline Email Worker] Job ${job.id} completed.`);
+    });
+    emailWorker.on('failed', (job, err) => {
+      logger.error(`[Inline Email Worker] Job ${job.id} failed: ${err.message}`);
+    });
+    emailWorker.on('error', (err) => {
+      logger.error(`[Inline Email Worker] Worker error: ${err.message}`);
+    });
+
+    // 2. Activity worker
+    const BATCH_FLUSH_INTERVAL_MS = 3000;
+    const BATCH_SIZE_LIMIT        = 50;
+    let pendingBatch = [];
+    let flushTimer   = null;
+
+    const flushBatch = async () => {
+      if (pendingBatch.length === 0) return;
+      const items = pendingBatch.splice(0, pendingBatch.length);
+      try {
+        await ActivityLog.insertMany(items, { ordered: false });
+        logger.info(`[Inline Activity Worker] Flushed ${items.length} activity log(s).`);
+      } catch (err) {
+        logger.error(`[Inline Activity Worker] insertMany failed: ${err.message}`);
+      }
+    };
+
+    const scheduledFlush = () => {
+      flushTimer = setTimeout(async () => {
+        flushTimer = null;
+        await flushBatch();
+      }, BATCH_FLUSH_INTERVAL_MS);
+    };
+
+    const activityWorker = new Worker(
+      QUEUES.ACTIVITY,
+      async (job) => {
+        const { correlationId, ...logData } = job.data;
+        pendingBatch.push(logData);
+        if (!flushTimer) {
+          scheduledFlush();
+        }
+        if (pendingBatch.length >= BATCH_SIZE_LIMIT) {
+          clearTimeout(flushTimer);
+          flushTimer = null;
+          await flushBatch();
+        }
+      },
+      { connection, concurrency: 10 }
+    );
+
+    activityWorker.on('failed', (job, err) => {
+      logger.error(`[Inline Activity Worker] Job ${job.id} failed: ${err.message}`);
+    });
+    activityWorker.on('error', (err) => {
+      logger.error(`[Inline Activity Worker] Worker error: ${err.message}`);
+    });
+
+    // Clean up worker connections on exit
+    process.on('SIGTERM', async () => {
+      logger.info('[Inline Workers] Cleaning up worker connections...');
+      await emailWorker.close();
+      clearTimeout(flushTimer);
+      await flushBatch();
+      await activityWorker.close();
+    });
+    process.on('SIGINT', async () => {
+      logger.info('[Inline Workers] Cleaning up worker connections...');
+      await emailWorker.close();
+      clearTimeout(flushTimer);
+      await flushBatch();
+      await activityWorker.close();
+    });
+
+    logger.info('[Inline Workers] Email and Activity workers initialized and listening to queues.');
+  }
 }
 
 // Graceful shut down / Error handling triggers

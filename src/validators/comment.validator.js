@@ -38,14 +38,55 @@ const moderateComment = {
     commentId: Joi.string().length(24).hex().required()
   }),
   body: Joi.object().keys({
-    status: Joi.string().valid('pending', 'approved', 'flagged', 'rejected').required().messages({
-      'any.only': 'Status must be one of: pending, approved, flagged, rejected.'
+    status: Joi.string().valid('pending', 'approved', 'rejected', 'spam', 'reported').required().messages({
+      'any.only': 'Status must be one of: pending, approved, rejected, spam, reported.'
     })
+  })
+};
+
+/**
+ * Validate admin comments query
+ */
+const getAdminComments = {
+  query: Joi.object().keys({
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(100).default(10),
+    tab: Joi.string().valid('all', 'pending', 'approved', 'rejected', 'spam', 'reported', 'trash').default('all'),
+    search: Joi.string().allow('', null).default(''),
+    newsId: Joi.string().length(24).hex().allow('', null),
+    authorEmail: Joi.string().allow('', null)
+  })
+};
+
+/**
+ * Validate comment flag report
+ */
+const reportComment = {
+  params: Joi.object().keys({
+    commentId: Joi.string().length(24).hex().required()
+  }),
+  body: Joi.object().keys({
+    reason: Joi.string().valid('spam', 'abuse', 'hate_speech', 'fake_information').required(),
+    commentText: Joi.string().allow('', null).max(500)
+  })
+};
+
+/**
+ * Validate user moderation
+ */
+const moderateUser = {
+  body: Joi.object().keys({
+    email: Joi.string().email().required().trim().lowercase(),
+    action: Joi.string().valid('ban', 'mute', 'unban', 'unmute').required(),
+    reason: Joi.string().allow('', null).max(250)
   })
 };
 
 module.exports = {
   createComment,
   getCommentsForArticle,
-  moderateComment
+  moderateComment,
+  getAdminComments,
+  reportComment,
+  moderateUser
 };

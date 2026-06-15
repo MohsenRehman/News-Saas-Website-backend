@@ -49,10 +49,28 @@ const commentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'approved', 'flagged', 'rejected'],
+      enum: ['pending', 'approved', 'rejected', 'spam', 'reported'],
       default: 'pending',
       index: true
-    }
+    },
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: true
+    },
+    reports: [
+      {
+        reason: { 
+          type: String, 
+          enum: ['spam', 'abuse', 'hate_speech', 'fake_information'], 
+          required: true 
+        },
+        comment: { type: String, default: '' },
+        ipAddress: { type: String, default: '' },
+        reportedAt: { type: Date, default: Date.now }
+      }
+    ]
   },
   {
     timestamps: true

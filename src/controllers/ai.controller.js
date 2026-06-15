@@ -7,9 +7,9 @@ const httpStatus = require('../constants/httpStatus');
 const generateArticle = async (req, res, next) => {
   try {
     const clientId = req.clientId;
-    const { title, provider, instructions } = req.body;
+    const { title, provider, instructions, language } = req.body;
 
-    const content = await aiService.generateArticleText(clientId, title, provider, instructions);
+    const content = await aiService.generateArticleText(clientId, title, provider, instructions, language);
     return res.success({ content }, 'AI Article generated successfully.');
   } catch (error) {
     next(error);

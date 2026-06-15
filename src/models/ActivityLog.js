@@ -29,6 +29,10 @@ const activityLogSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    details: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
     timestamp: {
       type: Date,
       default: Date.now,

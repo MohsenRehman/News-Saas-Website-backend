@@ -23,6 +23,12 @@ const envVarsSchema = Joi.object()
     SMTP_PORT: Joi.number().default(2525),
     SMTP_USER: Joi.string().allow('').default(''),
     SMTP_PASS: Joi.string().allow('').default(''),
+    MAIL_HOST: Joi.string().allow('').default(''),
+    MAIL_PORT: Joi.number().default(587),
+    MAIL_USERNAME: Joi.string().allow('').default(''),
+    MAIL_PASSWORD: Joi.string().allow('').default(''),
+    MAIL_FROM_ADDRESS: Joi.string().allow('').default(''),
+    MAIL_FROM_NAME: Joi.string().allow('').default(''),
     REDIS_URL: Joi.string().allow('').default(''),
     CRON_SECRET: Joi.string().default('super_cron_secret_123'),
     WEBHOOK_ENCRYPTION_KEY: Joi.string().length(64).default('a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2').description('32-byte hex key for AES-256-CBC webhook secret encryption'),
@@ -63,13 +69,17 @@ module.exports = {
   },
   email: {
     smtp: {
-      host: envVars.SMTP_HOST,
-      port: envVars.SMTP_PORT,
+      host: envVars.SMTP_HOST || envVars.MAIL_HOST,
+      port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : envVars.MAIL_PORT,
       auth: {
-        user: envVars.SMTP_USER,
-        pass: envVars.SMTP_PASS,
+        user: envVars.SMTP_USER || envVars.MAIL_USERNAME,
+        pass: envVars.SMTP_PASS || envVars.MAIL_PASSWORD,
       },
     },
+    from: {
+      address: envVars.MAIL_FROM_ADDRESS || envVars.SMTP_USER || envVars.MAIL_USERNAME || 'noreply@saasnews.com',
+      name: envVars.MAIL_FROM_NAME || 'NewsVerce'
+    }
   },
   redis: {
     url: envVars.REDIS_URL,

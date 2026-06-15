@@ -25,12 +25,14 @@ const createNews = async (req, res, next) => {
 const getNews = async (req, res, next) => {
   try {
     const clientId = req.clientId;
-    const { page, limit, status, category, title } = req.query;
+    const { page, limit, status, category, title, search } = req.query;
     const filters = {};
 
     if (status) filters.status = status;
     if (category) filters.category = category;
-    if (title) filters.title = { $regex: title, $options: 'i' };
+    
+    const searchVal = title || search;
+    if (searchVal) filters.title = { $regex: searchVal, $options: 'i' };
 
     const data = await newsRepository.findAll(clientId, filters, {
       page: parseInt(page, 10) || 1,

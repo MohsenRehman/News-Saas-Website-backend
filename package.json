@@ -4,10 +4,10 @@
   "description": "Multi-Tenant News CMS SaaS Backend",
   "main": "src/app.js",
   "scripts": {
-    "start":            "node src/app.js",
-    "dev":              "nodemon src/app.js",
-    "worker:email":     "node src/workers/email.worker.js",
-    "worker:activity":  "node src/workers/activity.worker.js"
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "worker:email": "node src/workers/email.worker.js",
+    "worker:activity": "node src/workers/activity.worker.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -30,6 +30,7 @@
     "multer": "^2.1.1",
     "nodemailer": "^8.0.10",
     "redis": "^6.0.0",
+    "socket.io": "^4.8.3",
     "stripe": "^22.2.0",
     "winston": "^3.13.0",
     "xss": "^1.0.15"

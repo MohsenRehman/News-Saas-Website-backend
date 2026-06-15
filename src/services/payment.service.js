@@ -169,7 +169,7 @@ const handleCheckoutComplete = async (session) => {
       variables: {
         name: adminUser.name,
         email: adminUser.email,
-        brandName: `SaaS News Platform (${plan.toUpperCase()})`,
+        brandName: `NewsVerce (${plan.toUpperCase()})`,
         supportEmail: 'billing@saasnews.com',
         loginUrl: `${process.env.CLIENT_URL || 'http://localhost:3000'}/login`
       }
@@ -245,7 +245,7 @@ const handlePaymentFailed = async (invoice) => {
       subject: 'Urgent: Payment Failed for your subscription',
       templateName: 'subscriptionExpiry',
       variables: {
-        brandName: 'SaaS News Platform',
+        brandName: 'NewsVerce',
         supportEmail: 'billing@saasnews.com',
         plan: stripeCustomer.plan,
         expiryDate: 'Immediately (due to failed payment)',

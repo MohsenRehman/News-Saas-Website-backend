@@ -68,6 +68,18 @@ router.get(
   newsletterController.getCampaigns
 );
 
+router.put(
+  '/admin/campaigns/:campaignId',
+  validate(newsletterValidator.updateCampaign),
+  newsletterController.updateCampaign
+);
+
+router.delete(
+  '/admin/campaigns/:campaignId',
+  validate(newsletterValidator.checkIdParam),
+  newsletterController.deleteCampaign
+);
+
 router.post(
   '/admin/campaigns/:campaignId/send',
   validate(newsletterValidator.checkIdParam),

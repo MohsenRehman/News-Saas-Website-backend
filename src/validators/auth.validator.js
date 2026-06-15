@@ -33,9 +33,18 @@ const changePassword = {
   })
 };
 
+const updateProfile = {
+  body: Joi.object().keys({
+    name: Joi.string().required().trim(),
+    email: Joi.string().required().lowercase().trim().email(),
+    profileImage: Joi.string().allow('', null).optional()
+  })
+};
+
 module.exports = {
   login,
   forgotPassword,
   resetPassword,
-  changePassword
+  changePassword,
+  updateProfile
 };

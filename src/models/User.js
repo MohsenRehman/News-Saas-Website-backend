@@ -46,6 +46,10 @@ const userSchema = new mongoose.Schema(
       default: 'active',
       index: true
     },
+    profileImage: {
+      type: String,
+      default: ''
+    },
     lastLogin: {
       type: Date
     },

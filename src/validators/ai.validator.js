@@ -7,7 +7,8 @@ const generateArticle = {
     title: Joi.string().required().trim(),
     provider: Joi.string().valid(...providers).default('openrouter'),
     instructions: Joi.string().optional().allow(''),
-    category: Joi.string().optional().allow('')
+    category: Joi.string().optional().allow(''),
+    language: Joi.string().optional().allow('').default('English')
   })
 };
 
@@ -39,7 +40,8 @@ const workflow = {
     category: Joi.string().optional().allow(''),
     options: Joi.object().keys({
       tone: Joi.string().optional().allow(''),
-      instructions: Joi.string().optional().allow('')
+      instructions: Joi.string().optional().allow(''),
+      language: Joi.string().optional().allow('').default('English')
     }).optional()
   })
 };

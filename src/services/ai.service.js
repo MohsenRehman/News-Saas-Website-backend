@@ -146,18 +146,74 @@ const callGemini = async (prompt) => {
 /**
  * 1. Generate full article text from a title
  */
-const generateArticleText = async (clientId, title, provider = 'openrouter', instructions = '') => {
+const generateArticleText = async (clientId, title, provider = 'openrouter', instructions = '', language = 'English') => {
   // Usage stats increment is handled by checkPlanLimit middleware at route layer
 
   if (isMockMode(provider)) {
-    logger.info(`[AI Mock Mode] Generating article mock for: "${title}" (Provider: ${provider})`);
-    return `<h2>${title}</h2>\n<p><strong>Peshawar Daily News:</strong> In a major development today, our local sources report significant movements regarding "<em>${title}</em>". Stakeholders and administrative boards met earlier this morning to review policies.</p>\n<p>Further developments are anticipated in the coming hours as official statements are released to the public. Local authorities have advised citizens to follow official updates.</p>`;
+    logger.info(`[AI Mock Mode] Generating article mock for: "${title}" (Provider: ${provider}, Language: ${language})`);
+    if (language === 'Urdu') {
+      return `یہاں پر اردو زبان میں ایک پیشہ ورانہ مضمون کا متن لکھا گیا ہے۔ اس رپورٹ کے مطابق، "${title}" کے حوالے سے اہم پیش رفت سامنے آئی ہے۔ تمام متعلقہ حکام نے آج صبح ایک ہنگامی اجلاس منعقد کیا تاکہ آئندہ کے لائحہ عمل کا جائزہ لیا جا سکے۔ صحافتی ذرائع کا کہنا ہے کہ آنے والے گھنٹوں میں مزید تفصیلات جاری کی جائیں گی۔ عوام کو مشورہ دیا گیا ہے کہ وہ صرف باضابطہ بیانات پر ہی انحصار کریں۔`;
+    }
+    if (language === 'Pashto') {
+      return `دلته په پښتو ژبه کې د یوې مسلکي مقالې متن لیکل شوی دی. د تازه راپورونو له مخې، د "${title}" په اړه مهم پرمختګونه شوي دي. چارواکو نن سهار په یوه غونډه کې پر نوې کړنلاره خبرې وکړې. تمه کیږي چې په راتلونکو څو ساعتونو کې به رسمي سرچینې نور مالومات هم خپاره کړي. پر ولس غږ شوی چې یوازې باوري خبرونه تعقیب کړي.`;
+    }
+    return `A growing number of business owners are exploring opportunities to sell their companies as market conditions continue to evolve. Industry experts note that business sales are often driven by retirement planning, financial restructuring, or changing competitive pressures. Buyers are increasingly seeking established businesses with stable revenue streams and strong customer bases. Analysts suggest that careful preparation, accurate valuation, and professional guidance remain important factors in achieving a successful transaction. This development relates directly to the topic of "${title}".`;
   }
 
-  let prompt = `Write a comprehensive, professional news article with HTML paragraph tags based on this headline: "${title}". Make it detailed and structured.`;
+  let prompt = `You are an AI News Content Writer for a SaaS News Platform.
+
+Your task is to generate ONLY the article body.
+
+STRICT RULES:
+1. Write ONLY the news article content.
+2. Never write:
+   * FOR IMMEDIATE RELEASE
+   * Press Release
+   * Contact Information
+   * Media Relations
+   * Email addresses
+   * Website URLs
+   * Author notes
+   * Editor notes
+   * Disclaimers
+   * Promotional text
+   * Call-to-actions
+3. Never generate:
+   * HTML
+   * Markdown
+   * JSON
+   * XML
+   * Code blocks
+4. Output must be plain text only.
+5. The article must start directly with the first paragraph.
+6. Do not add:
+   * Introduction labels
+   * Conclusion labels
+   * Headings
+   * Subheadings
+   * Bullet points
+   * Numbered lists
+7. Language Rules:
+   * If language = English → Write only in English.
+   * If language = Urdu → Write only in Urdu script.
+   * If language = Pashto → Write only in Pashto script.
+   * Never mix languages.
+8. Tone:
+   * Professional journalism
+   * Neutral
+   * Factual
+   * Objective
+9. Length:
+   * 150–300 words.
+
+Topic: ${title}
+Language: ${language}
+`;
   if (instructions) {
-    prompt += ` Additional instructions and style guidelines to follow: "${instructions}".`;
+    prompt += `\nAdditional instructions and style guidelines to follow: "${instructions}".`;
   }
+  prompt += `\n\nReturn ONLY the final article body.`;
+
   if (provider === 'openrouter') return callOpenRouter(prompt);
   if (provider === 'openai') return callOpenAI(prompt);
   if (provider === 'gemini') return callGemini(prompt);

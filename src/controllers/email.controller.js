@@ -13,12 +13,12 @@ const sendTestEmail = async (req, res, next) => {
 
     await emailService.sendEmail({
       to,
-      subject:      'SaaS News Platform — SMTP Test Email',
+      subject:      'NewsVerce — SMTP Test Email',
       templateName,
       variables: {
         name:         'Admin',
         email:        to,
-        brandName:    'SaaS News Platform',
+        brandName:    'NewsVerce',
         supportEmail: 'support@saasnews.com',
         loginUrl:     config.clientUrl,
         resetLink:    `${config.clientUrl}/reset-password?token=TEST_TOKEN_12345`,

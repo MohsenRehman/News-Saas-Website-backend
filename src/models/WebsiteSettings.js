@@ -5,7 +5,8 @@ const socialLinksSchema = new mongoose.Schema({
   facebook: { type: String, default: '' },
   twitter: { type: String, default: '' },
   instagram: { type: String, default: '' },
-  youtube: { type: String, default: '' }
+  youtube: { type: String, default: '' },
+  tiktok: { type: String, default: '' }
 }, { _id: false });
 
 const websiteSettingsSchema = new mongoose.Schema(
@@ -83,6 +84,8 @@ const transformFn = function (doc, ret) {
   // Set social URLs for frontend compatibility
   ret.facebookUrl = ret.socialLinks?.facebook || '';
   ret.twitterUrl = ret.socialLinks?.twitter || '';
+  ret.youtubeUrl = ret.socialLinks?.youtube || '';
+  ret.tiktokUrl = ret.socialLinks?.tiktok || '';
   
   return ret;
 };

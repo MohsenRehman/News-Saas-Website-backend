@@ -68,6 +68,16 @@ router.get(
   commentController.getCommentsForArticle
 );
 
+/**
+ * POST /api/v1/comments/:commentId/report
+ * Flag a comment for review.
+ */
+router.post(
+  '/:commentId/report',
+  validate(commentValidator.reportComment),
+  commentController.reportComment
+);
+
 // ─── Admin/Editor Endpoints ──────────────────────────────────────────────────
 
 // All administrative routes require active credentials and editor/admin access
@@ -75,8 +85,18 @@ router.use(authenticate);
 router.use(authorize('admin', 'super_admin'));
 
 /**
+ * GET /api/v1/comments/admin/list
+ * Unified comment query with tab categories, keyword search, and article filters.
+ */
+router.get(
+  '/admin/list',
+  validate(commentValidator.getAdminComments),
+  commentController.getAdminComments
+);
+
+/**
  * GET /api/v1/comments/admin/pending
- * Retrieve pending comments.
+ * Retrieve pending comments (for backward compatibility).
  */
 router.get(
   '/admin/pending',
@@ -85,12 +105,40 @@ router.get(
 
 /**
  * PATCH /api/v1/comments/admin/:commentId/status
- * Moderate status of a comment (approve, reject, flag).
+ * Moderate status of a comment (approve, reject, spam).
  */
 router.patch(
   '/admin/:commentId/status',
   validate(commentValidator.moderateComment),
   commentController.moderateComment
+);
+
+/**
+ * POST /api/v1/comments/admin/:commentId/restore
+ * Restore a soft-deleted comment from Trash.
+ */
+router.post(
+  '/admin/:commentId/restore',
+  commentController.restoreComment
+);
+
+/**
+ * DELETE /api/v1/comments/admin/:commentId/permanent
+ * Hard delete a comment and its nested replies permanently.
+ */
+router.delete(
+  '/admin/:commentId/permanent',
+  commentController.deleteCommentPermanently
+);
+
+/**
+ * POST /api/v1/comments/admin/user/moderate
+ * Mute or Ban a user email address across the tenant platform.
+ */
+router.post(
+  '/admin/user/moderate',
+  validate(commentValidator.moderateUser),
+  commentController.moderateUser
 );
 
 /**

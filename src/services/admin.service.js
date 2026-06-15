@@ -56,10 +56,32 @@ const createAdmin = async (clientId, data, ipAddress, operatorId) => {
   logActivityResilient(clientId, operatorId, 'admin_create', 'admin', ipAddress);
   emitEvent(clientId.toString(), WEBHOOK_EVENTS.USER_CREATED, { userId: newAdmin._id, email: newAdmin.email, role: 'admin', createdAt: new Date() });
 
+  let tenant = {};
+  if (clientId) {
+    try {
+      const Client = require('../models/Client');
+      const client = await Client.findById(clientId);
+      if (client) {
+        const settings = await WebsiteSettings.findOne({ clientId });
+        const config = require('../config/config');
+        const { getClientUrl } = require('./email.service');
+        const clientUrl = getClientUrl(client, config.clientUrl);
+
+        tenant = {
+          siteName: settings ? settings.siteName : client.name,
+          contactEmail: settings ? settings.contactEmail : '',
+          clientUrl
+        };
+      }
+    } catch (err) {
+      logger.error(`[Welcome Email Resolve Error] ${err.message}`, err);
+    }
+  }
+
   // Send welcome email (fire-and-forget — resilient, non-blocking)
   sendWelcomeEmail(
     { name: newAdmin.name, email: newAdmin.email },
-    {} // Tenant branding injected in future via WebsiteSettings lookup
+    tenant
   ).catch(() => {});
 
   return {
@@ -288,7 +310,8 @@ const updateWebsiteSettings = async (clientId, settingsData, ipAddress, operator
     facebook: settingsData.facebookUrl !== undefined ? settingsData.facebookUrl : (socialLinks.facebook || ''),
     twitter: settingsData.twitterUrl !== undefined ? settingsData.twitterUrl : (socialLinks.twitter || ''),
     instagram: socialLinks.instagram || '',
-    youtube: socialLinks.youtube || ''
+    youtube: settingsData.youtubeUrl !== undefined ? settingsData.youtubeUrl : (socialLinks.youtube || ''),
+    tiktok: settingsData.tiktokUrl !== undefined ? settingsData.tiktokUrl : (socialLinks.tiktok || '')
   };
 
   // Update features

@@ -184,9 +184,23 @@ const getMe = async (req, res, next) => {
       email: user.email,
       role: user.role,
       clientId: user.clientId,
+      profileImage: user.profileImage || '',
       tenantSubdomain,
       status: user.status
     }, 'User profile retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update current user profile details
+ */
+const updateProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const profile = await authService.updateProfile(userId, req.body);
+    return res.success(profile, 'Profile updated successfully');
   } catch (error) {
     next(error);
   }
@@ -199,5 +213,6 @@ module.exports = {
   forgotPassword,
   resetPassword,
   changePassword,
-  getMe
+  getMe,
+  updateProfile
 };

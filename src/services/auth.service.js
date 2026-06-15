@@ -111,11 +111,34 @@ const forgotPassword = async (email) => {
 
   await user.save();
 
+  let tenant = {};
+  if (user.clientId) {
+    try {
+      const client = await Client.findById(user.clientId);
+      if (client) {
+        const WebsiteSettings = require('../models/WebsiteSettings');
+        const settings = await WebsiteSettings.findOne({ clientId: user.clientId });
+        const config = require('../config/config');
+        const { getClientUrl } = require('./email.service');
+        const clientUrl = getClientUrl(client, config.clientUrl);
+
+        tenant = {
+          siteName: settings ? settings.siteName : client.name,
+          contactEmail: settings ? settings.contactEmail : '',
+          clientUrl
+        };
+      }
+    } catch (err) {
+      const logger = require('../config/logger');
+      logger.error(`[Forgot Password Email Resolve Error] ${err.message}`, err);
+    }
+  }
+
   // Send password reset email (fire-and-forget — resilient, non-blocking)
   sendPasswordResetEmail(
     { name: user.name, email: user.email },
     resetToken,
-    {} // Tenant branding: resolved from WebsiteSettings in future
+    tenant
   ).catch(() => {}); // Email failure never breaks the password reset flow
 
   return resetToken;
@@ -182,10 +205,63 @@ const changePassword = async (userId, currentPassword, newPassword) => {
   return true;
 };
 
+/**
+ * Update authenticated user's profile info (name, email)
+ * @param {String} userId
+ * @param {Object} updateData
+ * @returns {Promise<Object>} Updated user profile
+ */
+const updateProfile = async (userId, updateData) => {
+  const user = await userRepository.findById(userId);
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, 'User not found');
+  }
+
+  if (updateData.email) {
+    const emailLower = updateData.email.toLowerCase();
+    // Check if email is already taken by another user
+    const existingUser = await userRepository.findByEmail(emailLower);
+    if (existingUser && existingUser._id.toString() !== userId.toString()) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Email is already registered by another user globally.');
+    }
+    user.email = emailLower;
+  }
+
+  if (updateData.name) {
+    user.name = updateData.name;
+  }
+
+  if (updateData.profileImage !== undefined) {
+    user.profileImage = updateData.profileImage;
+  }
+
+  await user.save();
+  
+  let tenantSubdomain = null;
+  if (user.clientId) {
+    const client = await Client.findById(user.clientId);
+    if (client) {
+      tenantSubdomain = client.subdomain;
+    }
+  }
+
+  return {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    clientId: user.clientId,
+    profileImage: user.profileImage || '',
+    tenantSubdomain,
+    status: user.status
+  };
+};
+
 module.exports = {
   loginWithEmailAndPassword,
   refreshAuth,
   forgotPassword,
   resetPassword,
-  changePassword
+  changePassword,
+  updateProfile
 };

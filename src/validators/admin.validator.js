@@ -55,6 +55,8 @@ const updateSettings = {
     contactPhone: Joi.string().allow('', null).trim().default(''),
     twitterUrl: Joi.string().allow('', null).trim().default(''),
     facebookUrl: Joi.string().allow('', null).trim().default(''),
+    youtubeUrl: Joi.string().allow('', null).trim().default(''),
+    tiktokUrl: Joi.string().allow('', null).trim().default(''),
     features: Joi.object().keys({
       aiStudioEnabled: Joi.boolean().default(true),
       commentsApprovalRequired: Joi.boolean().default(false)

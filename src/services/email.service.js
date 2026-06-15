@@ -17,7 +17,9 @@ const TEMPLATES_DIR     = path.join(__dirname, '../templates/emails');
 const BASE_TEMPLATE     = fs.readFileSync(path.join(TEMPLATES_DIR, 'base.hbs'), 'utf8');
 const baseCompiled      = handlebars.compile(BASE_TEMPLATE);
 
-const DEFAULT_FROM      = `"SaaS News Platform" <${config.email.smtp.auth.user || 'noreply@saasnews.com'}>`;
+const DEFAULT_FROM      = config.email.from 
+  ? `"${config.email.from.name}" <${config.email.from.address}>`
+  : `"NewsVerce" <${config.email.smtp.auth.user || 'noreply@saasnews.com'}>`;
 const EMAIL_RETRY_COUNT = 2;     // Retry up to 2 times before giving up (feedback requirement)
 const EMAIL_RETRY_DELAY = config.env === 'development' || config.env === 'test' ? 100 : 2000; // 2 second base delay in prod, 100ms in dev/test
 
@@ -313,6 +315,35 @@ const sendNewsPublishedNotification = (news, tenant, author) => {
   });
 };
 
+/**
+ * Resolves the client URL dynamically.
+ * Supports prepending subdomains to localhost or production root URL, or using customDomain.
+ * Catches .vercel.app default domains and falls back to root (no wildcard subdomain support).
+ * @param {Object} client - The Client model instance
+ * @param {string} baseClientUrl - The configured base client URL
+ * @returns {string} The resolved client URL
+ */
+const getClientUrl = (client, baseClientUrl) => {
+  if (!client) return baseClientUrl;
+
+  if (client.customDomain) {
+    const protocol = baseClientUrl.startsWith('https') ? 'https' : 'http';
+    return `${protocol}://${client.customDomain}`;
+  }
+
+  try {
+    const url = new URL(baseClientUrl);
+    // Vercel default domains do not support wildcard subdomains, so fall back to root
+    if (url.hostname.endsWith('.vercel.app')) {
+      return baseClientUrl;
+    }
+    url.hostname = `${client.subdomain}.${url.hostname}`;
+    return url.origin;
+  } catch (err) {
+    return baseClientUrl;
+  }
+};
+
 module.exports = {
   renderTemplate,
   sendEmail,
@@ -322,5 +353,6 @@ module.exports = {
   sendSubscriptionExpiryWarning,
   sendUsageWarning,
   sendNewsPublishedNotification,
+  getClientUrl,
   TOKEN_EXPIRY_MINUTES,
 };

@@ -45,7 +45,27 @@ const create = async (data, session) => {
  * @returns {Promise<Client|null>}
  */
 const findById = async (id) => {
-  return Client.findById(id);
+  const client = await Client.findById(id);
+  if (!client) return null;
+  const admin = await User.findOne({
+    clientId: client._id,
+    role: 'super_admin',
+    isDeleted: { $ne: true }
+  }).select('email name').lean();
+
+  const settings = await WebsiteSettings.findOne({ clientId: client._id, isDeleted: { $ne: true } }).populate('logo', 'url').lean();
+
+  const plainClient = client.toObject();
+  plainClient.adminEmail = admin ? admin.email : '';
+  plainClient.adminName = admin ? admin.name : '';
+  
+  let logoUrl = '';
+  if (settings && settings.logo) {
+    logoUrl = typeof settings.logo === 'object' ? settings.logo.url : settings.logo;
+  }
+  plainClient.logo = logoUrl;
+  
+  return plainClient;
 };
 
 /**
@@ -66,7 +86,48 @@ const findAll = async (filters = {}, options = {}) => {
     .sort({ createdAt: -1 })
     .exec();
 
-  return { results, total, page, limit };
+  // Fetch the super_admin user for each client in the page results
+  const clientIds = results.map(client => client._id);
+  const admins = await User.find({
+    clientId: { $in: clientIds },
+    role: 'super_admin',
+    isDeleted: { $ne: true }
+  }).select('email name clientId').lean();
+
+  const settingsList = await WebsiteSettings.find({
+    clientId: { $in: clientIds },
+    isDeleted: { $ne: true }
+  }).populate('logo', 'url').lean();
+
+  const adminMap = {};
+  admins.forEach(admin => {
+    if (admin.clientId) {
+      adminMap[admin.clientId.toString()] = admin;
+    }
+  });
+
+  const logoMap = {};
+  settingsList.forEach(settings => {
+    if (settings.clientId) {
+      let logoUrl = '';
+      if (settings.logo) {
+        logoUrl = typeof settings.logo === 'object' ? settings.logo.url : settings.logo;
+      }
+      logoMap[settings.clientId.toString()] = logoUrl;
+    }
+  });
+
+  // Map results to attach admin details dynamically
+  const resultsWithAdmin = results.map(client => {
+    const plainClient = client.toObject();
+    const admin = adminMap[client._id.toString()];
+    plainClient.adminEmail = admin ? admin.email : '';
+    plainClient.adminName = admin ? admin.name : '';
+    plainClient.logo = logoMap[client._id.toString()] || '';
+    return plainClient;
+  });
+
+  return { results: resultsWithAdmin, total, page, limit };
 };
 
 /**

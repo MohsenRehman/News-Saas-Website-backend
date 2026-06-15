@@ -102,7 +102,7 @@ const sendCampaign = async (clientId, campaignId, operatorUserId) => {
   }
 
   const client = await Client.findById(clientId);
-  const brandName = client ? client.name : 'SaaS News Portal';
+  const brandName = client ? client.name : 'NewsVerce';
 
   const subscribers = await Subscriber.find({ clientId, status: 'active' });
   const total = subscribers.length;
@@ -254,6 +254,43 @@ const getCampaigns = async (clientId, options = {}) => {
   return { results, total, page, limit };
 };
 
+/**
+ * Update an existing campaign draft
+ */
+const updateCampaign = async (clientId, campaignId, data, operatorUserId) => {
+  const campaign = await Campaign.findOne({ _id: campaignId, clientId, isDeleted: false });
+  if (!campaign) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Campaign not found.');
+  }
+
+  if (campaign.status !== 'draft') {
+    throw new AppError(httpStatus.BAD_REQUEST, `Only draft campaigns can be updated. Current status: ${campaign.status}`);
+  }
+
+  campaign.subject = data.subject !== undefined ? data.subject : campaign.subject;
+  campaign.body = data.body !== undefined ? data.body : campaign.body;
+  await campaign.save();
+
+  return campaign.toObject();
+};
+
+/**
+ * Soft delete a campaign
+ */
+const deleteCampaign = async (clientId, campaignId) => {
+  const campaign = await Campaign.findOne({ _id: campaignId, clientId, isDeleted: false });
+  if (!campaign) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Campaign not found.');
+  }
+
+  if (campaign.status === 'sending') {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Cannot delete a campaign while it is sending.');
+  }
+
+  await campaign.softDelete();
+  return { success: true, message: 'Campaign deleted successfully.' };
+};
+
 module.exports = {
   subscribe,
   unsubscribe,
@@ -261,5 +298,7 @@ module.exports = {
   sendCampaign,
   getSubscribers,
   removeSubscriber,
-  getCampaigns
+  getCampaigns,
+  updateCampaign,
+  deleteCampaign
 };

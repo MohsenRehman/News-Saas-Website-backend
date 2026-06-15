@@ -83,7 +83,32 @@ const createWebsite = async (data, ipAddress, platformOwnerId) => {
     // D. Seed default categories for this tenant client
     await categoryService.seedDefaultCategories(client._id, session);
 
-    // E. Initialize tenant Usage Statistics document
+    // E. Create WebsiteSettings with the uploaded logo if present
+    let logoMediaId = null;
+    if (data.logo) {
+      const Media = require('../models/Media');
+      const media = await Media.create([{
+        clientId: client._id,
+        name: 'Website Logo',
+        url: data.logo,
+        publicId: `logo_${Date.now()}`,
+        size: 1000,
+        type: 'image',
+        resourceType: 'image'
+      }], { session });
+      logoMediaId = media[0]._id;
+    }
+
+    const WebsiteSettings = require('../models/WebsiteSettings');
+    await WebsiteSettings.create([{
+      clientId: client._id,
+      siteName: client.name,
+      logo: logoMediaId,
+      contactEmail: data.adminEmail,
+      socialLinks: {}
+    }], { session });
+
+    // F. Initialize tenant Usage Statistics document
     await UsageStats.create([{
       clientId: client._id,
       adminCount: 0,
@@ -129,10 +154,102 @@ const getClients = async (filters, options) => {
  */
 const updateClient = async (clientId, updateData) => {
   const client = await clientRepository.findById(clientId);
-  if (!client || client.isDeleted) {
+  if (!client) {
     throw new AppError(httpStatus.NOT_FOUND, 'Client not found.');
   }
-  return clientRepository.update(clientId, updateData);
+
+  const User = require('../models/User');
+
+  // If updateData contains adminName or adminEmail, update the super_admin User
+  if (updateData.adminName || updateData.adminEmail) {
+    const adminUser = await User.findOne({ clientId, role: 'super_admin', isDeleted: { $ne: true } });
+    if (adminUser) {
+      if (updateData.adminName) adminUser.name = updateData.adminName;
+      if (updateData.adminEmail) {
+        const emailLower = updateData.adminEmail.toLowerCase();
+        // Check if the email is already registered by another user globally
+        const existingUser = await User.findOne({
+          email: emailLower,
+          _id: { $ne: adminUser._id }
+        });
+        if (existingUser) {
+          throw new AppError(httpStatus.BAD_REQUEST, 'Email is already registered by another user globally.');
+        }
+        adminUser.email = emailLower;
+      }
+      await adminUser.save();
+    }
+  }
+
+  // Update client fields
+  const clientUpdateData = {};
+  if (updateData.name !== undefined) clientUpdateData.name = updateData.name;
+  if (updateData.subdomain !== undefined) clientUpdateData.subdomain = updateData.subdomain;
+  if (updateData.customDomain !== undefined) clientUpdateData.customDomain = updateData.customDomain;
+
+  const updatedClient = await clientRepository.update(clientId, clientUpdateData);
+
+  // Update logo in WebsiteSettings if provided
+  if (updateData.logo !== undefined) {
+    const WebsiteSettings = require('../models/WebsiteSettings');
+    const Media = require('../models/Media');
+    let settings = await WebsiteSettings.findOne({ clientId, isDeleted: { $ne: true } });
+    if (!settings) {
+      settings = new WebsiteSettings({ clientId, siteName: updatedClient.name });
+    }
+
+    if (updateData.name) {
+      settings.siteName = updateData.name;
+    }
+
+    if (!updateData.logo) {
+      settings.logo = null;
+    } else {
+      const mongoose = require('mongoose');
+      if (mongoose.Types.ObjectId.isValid(updateData.logo)) {
+        settings.logo = updateData.logo;
+      } else {
+        // Search Media by URL
+        let media = await Media.findOne({ clientId, url: updateData.logo, isDeleted: { $ne: true } });
+        if (!media) {
+          media = await Media.create({
+            clientId,
+            name: 'Website Logo',
+            url: updateData.logo,
+            publicId: `logo_${Date.now()}`,
+            size: 1000,
+            type: 'image',
+            resourceType: 'image'
+          });
+        }
+        settings.logo = media._id;
+      }
+    }
+    await settings.save();
+  } else if (updateData.name) {
+    // Sync name changes to website settings siteName
+    const WebsiteSettings = require('../models/WebsiteSettings');
+    let settings = await WebsiteSettings.findOne({ clientId, isDeleted: { $ne: true } });
+    if (settings) {
+      settings.siteName = updateData.name;
+      await settings.save();
+    }
+  }
+
+  // Return the updated client with the admin email/name and logo attached for the UI
+  const adminUser = await User.findOne({ clientId, role: 'super_admin', isDeleted: { $ne: true } }).select('email name').lean();
+  const WebsiteSettings = require('../models/WebsiteSettings');
+  const settings = await WebsiteSettings.findOne({ clientId, isDeleted: { $ne: true } }).populate('logo', 'url').lean();
+  let logoUrl = '';
+  if (settings && settings.logo) {
+    logoUrl = typeof settings.logo === 'object' ? settings.logo.url : settings.logo;
+  }
+
+  const result = updatedClient.toObject();
+  result.adminEmail = adminUser ? adminUser.email : '';
+  result.adminName = adminUser ? adminUser.name : '';
+  result.logo = logoUrl;
+  return result;
 };
 
 /**
@@ -144,8 +261,7 @@ const updateClientStatus = async (clientId, status, ipAddress, platformOwnerId) 
     throw new AppError(httpStatus.NOT_FOUND, 'Client not found.');
   }
 
-  client.status = status;
-  await client.save();
+  const updatedClient = await clientRepository.update(clientId, { status });
 
   logActivityResilient({
     clientId: null,
@@ -156,7 +272,7 @@ const updateClientStatus = async (clientId, status, ipAddress, platformOwnerId) 
     timestamp: new Date()
   });
 
-  return client;
+  return updatedClient;
 };
 
 /**

@@ -9,8 +9,13 @@ const { checkPlanLimit } = require('../../middleware/subscription');
 
 const router = express.Router();
 
-// Enforce auth & super_admin RBAC globally on this router
+// ── Routes accessible to BOTH admin and super_admin (authenticate only) ──────
 router.use(authenticate);
+
+// Tenant dashboard stats — available to any authenticated tenant user
+router.get('/dashboard-stats', adminController.getDashboardStats);
+
+// ── Routes locked to super_admin only ────────────────────────────────────────
 router.use(authorize('super_admin'));
 
 // Tenant user (editor) management
@@ -24,9 +29,6 @@ router.delete('/users/:id', adminController.deleteAdmin);
 
 // Tenant admin activity auditing monitor
 router.get('/monitoring', adminController.getAdminsMonitoring);
-
-// Tenant dashboard analytics statistics
-router.get('/dashboard-stats', adminController.getDashboardStats);
 
 // Tenant branding & website configuration
 router.get('/settings', adminController.getWebsiteSettings);

@@ -62,11 +62,25 @@ const checkIdParam = {
   })
 };
 
+/**
+ * Validate admin updating a newsletter campaign
+ */
+const updateCampaign = {
+  params: Joi.object().keys({
+    campaignId: Joi.string().length(24).hex().required()
+  }),
+  body: Joi.object().keys({
+    subject: Joi.string().optional().trim().min(3).max(150),
+    body: Joi.string().optional().trim().min(10)
+  })
+};
+
 module.exports = {
   subscribe,
   unsubscribe,
   createCampaign,
   getSubscribers,
   getCampaigns,
-  checkIdParam
+  checkIdParam,
+  updateCampaign
 };

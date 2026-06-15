@@ -166,6 +166,35 @@ const sendCampaign = async (req, res, next) => {
   }
 };
 
+/**
+ * Admin: Update campaign draft
+ */
+const updateCampaign = async (req, res, next) => {
+  try {
+    const { campaignId } = req.params;
+    const operatorUserId = req.user.id || req.user._id;
+
+    const campaign = await newsletterService.updateCampaign(req.clientId, campaignId, req.body, operatorUserId);
+    return res.success(campaign, 'Campaign draft updated successfully.');
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * Admin: Delete campaign
+ */
+const deleteCampaign = async (req, res, next) => {
+  try {
+    const { campaignId } = req.params;
+
+    const result = await newsletterService.deleteCampaign(req.clientId, campaignId);
+    return res.success(result, 'Campaign deleted successfully.');
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
   subscribe,
   unsubscribe,
@@ -173,5 +202,7 @@ module.exports = {
   removeSubscriber,
   createCampaign,
   getCampaigns,
-  sendCampaign
+  sendCampaign,
+  updateCampaign,
+  deleteCampaign
 };

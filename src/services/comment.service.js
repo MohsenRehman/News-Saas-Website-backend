@@ -255,7 +255,8 @@ Comment to moderate:
     /khabees/i, /shetaan/i, /dushman/i,
     /kill/i, /suicide/i, /die/i, /murder/i, /threat/i, /mram/i, /wazham/i, /marr/i, /maro/i,
     /casino/i, /poker/i, /betting/i, /lottery/i, /viagra/i, /free cash/i, /make money/i, /earn \$[0-9]+/i, /click here/i,
-    /free crypto/i, /giveaway/i, /paisa kama/i, /paisa kamayein/i, /visit my website/i, /cheap/i, /buy cheap/i, /spamlink/i
+    /free crypto/i, /giveaway/i, /paisa kama/i, /paisa kamayein/i, /visit my website/i, /cheap/i, /buy cheap/i, /spamlink/i,
+    /dangerous/i, /scam/i, /fraud/i, /fake/i, /cheat/i, /phishing/i
   ];
   const isSpam = spamTerms.some(term => term.test(lowercase));
   if (isSpam) {

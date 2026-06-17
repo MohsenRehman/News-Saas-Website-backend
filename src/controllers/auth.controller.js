@@ -9,7 +9,7 @@ const tokenUtil = require('../utils/token');
 const Client = require('../models/Client');
 
 // Resilient logging helper
-const logActivityResilient = async (clientId, userId, action, module, ipAddress) => {
+const logActivityResilient = async (clientId, userId, action, module, ipAddress, details = null) => {
   if (!clientId) return; // Skip logs for platform level owners
   try {
     await ActivityLog.create({
@@ -18,6 +18,7 @@ const logActivityResilient = async (clientId, userId, action, module, ipAddress)
       action,
       module,
       ipAddress,
+      details,
       timestamp: new Date()
     });
   } catch (err) {
@@ -112,34 +113,89 @@ const refreshTokens = async (req, res, next) => {
 };
 
 /**
- * Request password reset link (mock)
+ * Request password reset OTP
  */
 const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
-    const resetToken = await authService.forgotPassword(email);
+    const ipAddress = req.ip || req.headers['x-forwarded-for'] || '';
+    const userAgent = req.headers['user-agent'] || '';
 
-    // In production we send this token via email.
-    // For easy API testing in Thunder Client, we will return the token in the response data.
-    return res.success({
-      resetToken,
-      info: 'Normally emailed to client. Included in response payload for validation.'
-    }, 'Password reset link generated');
+    await authService.forgotPasswordOTP(email, ipAddress, userAgent);
+
+    // Activity Log if user exists
+    const user = await userRepository.findByEmail(email);
+    if (user) {
+      await logActivityResilient(user.clientId, user._id, 'password_reset_request', 'auth', ipAddress, { userAgent });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'If an account with this email exists, we have sent a password reset OTP.'
+    });
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * Complete password reset using token
+ * Verify OTP code
+ */
+const verifyResetOtp = async (req, res, next) => {
+  try {
+    const { email, otp } = req.body;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'] || '';
+    const userAgent = req.headers['user-agent'] || '';
+
+    const resetToken = await authService.verifyResetOtp(email, otp);
+
+    const user = await userRepository.findByEmail(email);
+    if (user) {
+      await logActivityResilient(user.clientId, user._id, 'otp_verification_success', 'auth', ipAddress, { userAgent });
+    }
+
+    return res.status(200).json({
+      success: true,
+      resetToken,
+      message: 'OTP verified successfully'
+    });
+  } catch (error) {
+    // Audit failed attempts if user exists
+    try {
+      const { email } = req.body;
+      const user = await userRepository.findByEmail(email);
+      if (user) {
+        const ipAddress = req.ip || req.headers['x-forwarded-for'] || '';
+        const userAgent = req.headers['user-agent'] || '';
+        await logActivityResilient(user.clientId, user._id, 'otp_verification_failed', 'auth', ipAddress, {
+          userAgent,
+          reason: error.message
+        });
+      }
+    } catch (logErr) {
+      logger.error(`[ActivityLog Audit Error] Failed logging OTP verification error: ${logErr.message}`);
+    }
+    next(error);
+  }
+};
+
+/**
+ * Complete password reset using temporary resetToken
  */
 const resetPassword = async (req, res, next) => {
   try {
-    const { token } = req.query;
-    const { password } = req.body;
+    const { resetToken, newPassword } = req.body;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'] || '';
+    const userAgent = req.headers['user-agent'] || '';
 
-    await authService.resetPassword(token, password);
-    return res.success(null, 'Password reset successful');
+    const user = await authService.resetPasswordOTP(resetToken, newPassword);
+
+    await logActivityResilient(user.clientId, user._id, 'password_reset_success', 'auth', ipAddress, { userAgent });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password reset successfully'
+    });
   } catch (error) {
     next(error);
   }
@@ -211,6 +267,7 @@ module.exports = {
   logout,
   refreshTokens,
   forgotPassword,
+  verifyResetOtp,
   resetPassword,
   changePassword,
   getMe,

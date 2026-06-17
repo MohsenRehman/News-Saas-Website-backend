@@ -89,31 +89,47 @@ const refreshAuth = async (refreshToken) => {
 };
 
 /**
- * Generate password recovery reset token
+ * Request password reset OTP
  * @param {String} email
- * @returns {Promise<String>} Plain text reset token to send via email
+ * @param {String} ipAddress
+ * @param {String} userAgent
+ * @returns {Promise<void>}
  */
-const forgotPassword = async (email) => {
+const forgotPasswordOTP = async (email, ipAddress, userAgent) => {
   const user = await userRepository.findByEmail(email);
   if (!user) {
-    // Return empty status or handle generically to prevent email enumeration
-    throw new AppError(httpStatus.NOT_FOUND, 'No account found with this email');
+    // Return early to prevent email enumeration timing attacks
+    return;
   }
 
-  // Generate random bytes token
-  const resetToken = crypto.randomBytes(32).toString('hex');
-  const hashedResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  // 1. Cooldown check
+  if (user.passwordResetOTPResendAvailableAt && user.passwordResetOTPResendAvailableAt > Date.now()) {
+    const secondsLeft = Math.ceil((user.passwordResetOTPResendAvailableAt - Date.now()) / 1000);
+    throw new AppError(httpStatus.BAD_REQUEST, `Please wait ${secondsLeft} seconds before requesting a new OTP.`);
+  }
 
-  user.passwordResetToken = hashedResetToken;
-  // Hard expiry enforced server-side — TOKEN_EXPIRY_MINUTES is the single source of truth
-  // shared between auth.service.js and email.service.js to keep UI text in sync
-  user.passwordResetExpires = Date.now() + TOKEN_EXPIRY_MINUTES * 60 * 1000;
+  // 2. Generate secure 6-digit OTP
+  const crypto = require('crypto');
+  const otp = crypto.randomInt(100000, 1000000).toString();
+
+  // 3. Hash OTP (8 rounds to match standard hashing configuration)
+  const bcrypt = require('bcryptjs');
+  const hashedOtp = await bcrypt.hash(otp, 8);
+
+  // 4. Update user model, explicitly resetting attempts and verification status
+  user.passwordResetOTP = hashedOtp;
+  user.passwordResetOTPExpiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
+  user.passwordResetOTPVerified = false;
+  user.passwordResetOTPAttempts = 0;
+  user.passwordResetOTPResendAvailableAt = Date.now() + 60 * 1000; // 60 seconds cooldown
 
   await user.save();
 
+  // 5. Send OTP via email (resilient fire-and-forget)
   let tenant = {};
   if (user.clientId) {
     try {
+      const Client = require('../models/Client');
       const client = await Client.findById(user.clientId);
       if (client) {
         const WebsiteSettings = require('../models/WebsiteSettings');
@@ -130,56 +146,114 @@ const forgotPassword = async (email) => {
       }
     } catch (err) {
       const logger = require('../config/logger');
-      logger.error(`[Forgot Password Email Resolve Error] ${err.message}`, err);
+      logger.error(`[Forgot Password OTP Email Resolve Error] ${err.message}`, err);
     }
   }
 
-  // Send password reset email (fire-and-forget — resilient, non-blocking)
-  sendPasswordResetEmail(
+  const { sendPasswordResetOTPEmail } = require('./email.service');
+  sendPasswordResetOTPEmail(
     { name: user.name, email: user.email },
-    resetToken,
+    otp,
     tenant
-  ).catch(() => {}); // Email failure never breaks the password reset flow
+  ).catch(() => {});
+};
 
+/**
+ * Verify password reset OTP and generate temporary resetToken
+ * @param {String} email
+ * @param {String} otp
+ * @returns {Promise<String>} Plain text resetToken
+ */
+const verifyResetOtp = async (email, otp) => {
+  const user = await userRepository.findByEmail(email);
+  if (!user) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid OTP');
+  }
+
+  if (!user.passwordResetOTP) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid OTP');
+  }
+
+  if (user.passwordResetOTPExpiresAt && user.passwordResetOTPExpiresAt < Date.now()) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'OTP has expired. Please request a new OTP.');
+  }
+
+  if (user.passwordResetOTPAttempts >= 5) {
+    // Invalidate and save
+    user.passwordResetOTP = null;
+    user.passwordResetOTPExpiresAt = null;
+    user.passwordResetOTPAttempts = 0;
+    user.passwordResetOTPVerified = false;
+    user.passwordResetOTPResendAvailableAt = null;
+    await user.save();
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid OTP');
+  }
+
+  const bcrypt = require('bcryptjs');
+  const isMatch = await bcrypt.compare(otp, user.passwordResetOTP);
+
+  if (!isMatch) {
+    user.passwordResetOTPAttempts += 1;
+    if (user.passwordResetOTPAttempts >= 5) {
+      user.passwordResetOTP = null;
+      user.passwordResetOTPExpiresAt = null;
+      user.passwordResetOTPAttempts = 0;
+      user.passwordResetOTPVerified = false;
+      user.passwordResetOTPResendAvailableAt = null;
+    }
+    await user.save();
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid OTP');
+  }
+
+  // Generate temporary reset token (32 bytes hex)
+  const crypto = require('crypto');
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const hashedResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+  // Clear all OTP metadata and store reset session details
+  user.passwordResetToken = hashedResetToken;
+  user.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes session TTL
+  user.passwordResetOTP = null;
+  user.passwordResetOTPExpiresAt = null;
+  user.passwordResetOTPAttempts = 0;
+  user.passwordResetOTPResendAvailableAt = null;
+  user.passwordResetOTPVerified = true;
+
+  await user.save();
   return resetToken;
 };
 
 /**
- * Reset user password using the validation token
+ * Reset password using temporary resetToken
  * @param {String} resetToken
  * @param {String} newPassword
- * @returns {Promise<Boolean>}
+ * @returns {Promise<User>} The updated user document
  */
-const resetPassword = async (resetToken, newPassword) => {
+const resetPasswordOTP = async (resetToken, newPassword) => {
+  const crypto = require('crypto');
   const hashedResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
 
-  // Step 1: Find by token hash ONLY (no expiry filter) — so we can always clean up expired tokens
   const user = await userRepository.findUserByTokenHashOnly(hashedResetToken);
-
   if (!user) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Password reset token is invalid or does not exist.');
+    throw new AppError(httpStatus.BAD_REQUEST, 'Reset password token is invalid or does not exist.');
   }
 
-  // Step 2: Hard backend expiry enforcement (feedback requirement)
-  // Double-check expiry here — defends against clock skew and direct DB manipulation.
-  // Also ensures expired tokens are always cleared from DB (not just silently rejected).
   if (!user.passwordResetExpires || user.passwordResetExpires < Date.now()) {
-    // Always clean up expired tokens so DB stays tidy
-    user.passwordResetToken   = null;
+    user.passwordResetToken = null;
     user.passwordResetExpires = null;
+    user.passwordResetOTPVerified = false;
     await user.save();
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      `Password reset token has expired. Tokens are valid for ${TOKEN_EXPIRY_MINUTES} minutes. Please request a new reset link.`
-    );
+    throw new AppError(httpStatus.BAD_REQUEST, 'Password reset token has expired. Please request a new OTP.');
   }
 
-  user.password             = newPassword;
-  user.passwordResetToken   = null;
+  // Update password and clear session metadata
+  user.password = newPassword;
+  user.passwordResetToken = null;
   user.passwordResetExpires = null;
+  user.passwordResetOTPVerified = false;
 
   await user.save();
-  return true;
+  return user;
 };
 
 /**
@@ -260,8 +334,9 @@ const updateProfile = async (userId, updateData) => {
 module.exports = {
   loginWithEmailAndPassword,
   refreshAuth,
-  forgotPassword,
-  resetPassword,
+  forgotPasswordOTP,
+  verifyResetOtp,
+  resetPasswordOTP,
   changePassword,
   updateProfile
 };

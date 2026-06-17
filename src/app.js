@@ -166,9 +166,8 @@ app.get('/', (req, res) => {
   res.status(200).json({ success: true, message: 'News SaaS API is running.' });
 });
 
-// 5. 404 Route Not Found Middleware — skip socket.io paths (handled by Socket.IO server, not Express)
+// 5. 404 Route Not Found Middleware
 app.use((req, res, next) => {
-  if (req.path.startsWith('/socket.io')) return next();
   next(new AppError(httpStatus.NOT_FOUND, `Route not found: ${req.originalUrl}`));
 });
 
@@ -181,9 +180,7 @@ if (process.env.NODE_ENV !== 'test') {
   server = app.listen(config.port, () => {
     logger.info(`Server is running on port ${config.port} in [${config.env}] environment`);
   });
-  // Initialize Socket.IO Server
-  const socketService = require('./config/socket');
-  socketService.init(server);
+
 
   // Initialize Background Workers inline for single-process environments (local dev)
   if (config.redis.url) {

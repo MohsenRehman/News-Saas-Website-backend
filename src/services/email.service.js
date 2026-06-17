@@ -241,6 +241,28 @@ const sendPasswordResetEmail = (user, resetToken, tenant = {}) => {
 };
 
 /**
+ * Send password reset OTP email.
+ * @param {Object} user       - { name, email }
+ * @param {string} otp        - Raw 6-digit OTP code
+ * @param {Object} tenant     - { siteName, contactEmail, clientUrl }
+ */
+const sendPasswordResetOTPEmail = (user, otp, tenant = {}) => {
+  return enqueueEmailJob({
+    to:           user.email,
+    subject:      'Password Reset OTP',
+    templateName: 'resetPasswordOTP',
+    variables: {
+      name:         user.name,
+      brandName:    tenant.siteName     || 'News SaaS',
+      supportEmail: tenant.contactEmail || '',
+      otp,
+      expiresIn:    10, // 10 minutes OTP TTL
+    },
+  });
+};
+
+
+/**
  * Send subscription expiry warning email.
  * @param {Object} tenant       - { siteName, contactEmail, clientUrl, adminEmail }
  * @param {Object} subscription - { plan, endDate }
@@ -350,6 +372,7 @@ module.exports = {
   enqueueEmailJob,
   sendWelcomeEmail,
   sendPasswordResetEmail,
+  sendPasswordResetOTPEmail,
   sendSubscriptionExpiryWarning,
   sendUsageWarning,
   sendNewsPublishedNotification,

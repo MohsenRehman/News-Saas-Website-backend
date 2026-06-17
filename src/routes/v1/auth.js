@@ -11,6 +11,7 @@ router.post('/login', validate(authValidator.login), authController.login);
 router.post('/logout', authController.logout);
 router.post('/refresh-tokens', authController.refreshTokens);
 router.post('/forgot-password', validate(authValidator.forgotPassword), authController.forgotPassword);
+router.post('/verify-reset-otp', validate(authValidator.verifyResetOtp), authController.verifyResetOtp);
 router.post('/reset-password', validate(authValidator.resetPassword), authController.resetPassword);
 
 // Protected auth endpoints

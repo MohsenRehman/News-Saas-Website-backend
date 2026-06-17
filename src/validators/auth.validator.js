@@ -13,12 +13,20 @@ const forgotPassword = {
   })
 };
 
-const resetPassword = {
-  query: Joi.object().keys({
-    token: Joi.string().required()
-  }),
+const verifyResetOtp = {
   body: Joi.object().keys({
-    password: Joi.string().required().min(6).messages({
+    email: Joi.string().required().email(),
+    otp: Joi.string().required().length(6).pattern(/^\d+$/).messages({
+      'string.length': 'OTP must be exactly 6 digits',
+      'string.pattern.base': 'OTP must contain only digits'
+    })
+  })
+};
+
+const resetPassword = {
+  body: Joi.object().keys({
+    resetToken: Joi.string().required(),
+    newPassword: Joi.string().required().min(6).messages({
       'string.min': 'Password must be at least 6 characters long'
     })
   })
@@ -44,6 +52,7 @@ const updateProfile = {
 module.exports = {
   login,
   forgotPassword,
+  verifyResetOtp,
   resetPassword,
   changePassword,
   updateProfile

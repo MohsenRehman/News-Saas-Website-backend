@@ -61,6 +61,26 @@ const userSchema = new mongoose.Schema(
     passwordResetExpires: {
       type: Date,
       default: null
+    },
+    passwordResetOTP: {
+      type: String,
+      default: null
+    },
+    passwordResetOTPExpiresAt: {
+      type: Date,
+      default: null
+    },
+    passwordResetOTPVerified: {
+      type: Boolean,
+      default: false
+    },
+    passwordResetOTPAttempts: {
+      type: Number,
+      default: 0
+    },
+    passwordResetOTPResendAvailableAt: {
+      type: Date,
+      default: null
     }
   },
   {

@@ -67,6 +67,7 @@ const corsOptions = {
     }
 
     try {
+      await connectDB();
       const host = origin.replace(/^https?:\/\//, '');
       const client = await resolveDomain(host);
 
@@ -82,6 +83,16 @@ const corsOptions = {
   credentials: true
 };
 app.use(cors(corsOptions));
+
+// Ensure DB Connection Middleware for all subsequent requests
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Inbound receiver: mounted BEFORE json body parser (uses raw body for Stripe sig)
 app.use('/api/v1/webhooks/inbound', require('./routes/v1/inbound'));

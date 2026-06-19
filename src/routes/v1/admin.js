@@ -15,8 +15,8 @@ router.use(authenticate);
 // Tenant dashboard stats — available to any authenticated tenant user
 router.get('/dashboard-stats', adminController.getDashboardStats);
 
-// ── Routes locked to super_admin only ────────────────────────────────────────
-router.use(authorize('super_admin'));
+// ── Routes locked to super_admin and platform_owner ─────────────────────────
+router.use(authorize('super_admin', 'platform_owner'));
 
 // Tenant user (editor) management
 router.post('/users', checkPlanLimit('maxUsers'), validate(adminValidator.createAdmin), adminController.createAdmin);

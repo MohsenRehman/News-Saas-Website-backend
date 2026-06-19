@@ -20,7 +20,9 @@ const { resolveDomain } = require('./tenants/domainResolver');
 const app = express();
 
 // Establish MongoDB Connection
-connectDB();
+connectDB().catch((err) => {
+  logger.error('Failed to establish initial MongoDB connection:', err.message);
+});
 
 // 1. Logging Setup (Morgan piped to Winston)
 const morganFormat = ':method :url :status :res[content-length] - :response-time ms';

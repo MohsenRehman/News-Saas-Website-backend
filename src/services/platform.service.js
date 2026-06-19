@@ -8,6 +8,8 @@ const Subscription = require('../models/Subscription');
 const Analytics = require('../models/Analytics');
 const ActivityLog = require('../models/ActivityLog');
 const UsageStats = require('../models/UsageStats');
+const News = require('../models/News');
+const Media = require('../models/Media');
 const AppError = require('../utils/appError');
 const httpStatus = require('../constants/httpStatus');
 const logger = require('../config/logger');
@@ -312,17 +314,56 @@ const deleteClient = async (clientId, ipAddress, platformOwnerId) => {
  * Aggregate platform statistics (Clients, Active, MRR, Traffic Hits)
  */
 const getDashboardStats = async () => {
-  const totalClients = await Client.countDocuments({ isDeleted: { $ne: true } });
-  const activeClients = await Client.countDocuments({ status: 'active', isDeleted: { $ne: true } });
+  const now = new Date();
+  const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-  // Calculate Amortized Monthly Recurring Revenue (MRR)
+  // Helper for trend growth string formatting
+  const calculateGrowth = (current, previous) => {
+    if (previous === 0) {
+      return current > 0 ? '+100.0% ↑' : '0.0% —';
+    }
+    const diff = ((current - previous) / previous) * 100;
+    if (diff > 0) {
+      return `+${diff.toFixed(1)}% ↑`;
+    } else if (diff < 0) {
+      return `${diff.toFixed(1)}% ↓`;
+    } else {
+      return '0.0% —';
+    }
+  };
+
+  // 1. Clients aggregation
+  const totalClients = await Client.countDocuments({ isDeleted: { $ne: true } });
+  const totalClientsLastMonth = await Client.countDocuments({
+    createdAt: { $lt: startOfThisMonth },
+    isDeleted: { $ne: true }
+  });
+  const clientsTotalTrend = calculateGrowth(totalClients, totalClientsLastMonth);
+
+  const activeClients = await Client.countDocuments({ status: 'active', isDeleted: { $ne: true } });
+  const activeClientsLastMonth = await Client.countDocuments({
+    status: 'active',
+    createdAt: { $lt: startOfThisMonth },
+    isDeleted: { $ne: true }
+  });
+  const clientsActiveTrend = calculateGrowth(activeClients, activeClientsLastMonth);
+
+  const suspendedClients = await Client.countDocuments({ status: 'suspended', isDeleted: { $ne: true } });
+  const suspendedClientsLastMonth = await Client.countDocuments({
+    status: 'suspended',
+    createdAt: { $lt: startOfThisMonth },
+    isDeleted: { $ne: true }
+  });
+  const clientsSuspendedTrend = calculateGrowth(suspendedClients, suspendedClientsLastMonth);
+
+  // 2. Revenue aggregation
   const activeSubscriptions = await Subscription.find({
     status: 'active',
     isDeleted: { $ne: true }
   });
 
-  let totalMRR = 0;
-  activeSubscriptions.forEach((sub) => {
+  const getSubMonthlyValuation = (sub) => {
     let monthlyValue = 0;
     if (sub.billingPeriod === 'monthly') {
       if (sub.plan === 'basic') monthlyValue = 29;
@@ -338,17 +379,213 @@ const getDashboardStats = async () => {
       else if (sub.plan === 'professional') monthlyValue = 2999 / 36;
       else if (sub.plan === 'enterprise') monthlyValue = 9999 / 36;
     }
-    totalMRR += monthlyValue;
+    return monthlyValue;
+  };
+
+  let monthlyRevenue = 0;
+  activeSubscriptions.forEach((sub) => {
+    monthlyRevenue += getSubMonthlyValuation(sub);
+  });
+  monthlyRevenue = Math.round(monthlyRevenue * 100) / 100;
+
+  // Calculate monthly revenue at the start of this month (i.e. subscriptions active then)
+  const subscriptionsLastMonth = await Subscription.find({
+    status: 'active',
+    startDate: { $lt: startOfThisMonth },
+    isDeleted: { $ne: true }
+  });
+  let monthlyRevenueLastMonth = 0;
+  subscriptionsLastMonth.forEach((sub) => {
+    if (!sub.endDate || sub.endDate >= startOfThisMonth) {
+      monthlyRevenueLastMonth += getSubMonthlyValuation(sub);
+    }
+  });
+  const revenueTrend = calculateGrowth(monthlyRevenue, monthlyRevenueLastMonth);
+
+  // 3. System stats aggregation
+  const totalNews = await News.countDocuments({ status: 'published', isDeleted: { $ne: true } });
+  const totalNewsThisMonth = await News.countDocuments({
+    status: 'published',
+    publishDate: { $gte: startOfThisMonth },
+    isDeleted: { $ne: true }
+  });
+  const totalNewsLastMonth = await News.countDocuments({
+    status: 'published',
+    publishDate: { $gte: startOfLastMonth, $lt: startOfThisMonth },
+    isDeleted: { $ne: true }
+  });
+  const newsTrend = calculateGrowth(totalNewsThisMonth, totalNewsLastMonth);
+
+  const totalTraffic = await Analytics.countDocuments({ isDeleted: { $ne: true } });
+  const trafficThisMonth = await Analytics.countDocuments({
+    timestamp: { $gte: startOfThisMonth },
+    isDeleted: { $ne: true }
+  });
+  const trafficLastMonth = await Analytics.countDocuments({
+    timestamp: { $gte: startOfLastMonth, $lt: startOfThisMonth },
+    isDeleted: { $ne: true }
+  });
+  const trafficTrend = calculateGrowth(trafficThisMonth, trafficLastMonth);
+
+  // AI Usage aggregation
+  const aiUsageAgg = await UsageStats.aggregate([
+    { $match: { isDeleted: { $ne: true } } },
+    { $group: { _id: null, total: { $sum: '$aiRequests' } } }
+  ]);
+  const aiUsage = aiUsageAgg[0]?.total || 0;
+
+  // Count AI logs in ActivityLog to get monthly breakdown
+  const aiActivityThisMonth = await ActivityLog.countDocuments({
+    module: { $regex: /^ai$/i },
+    timestamp: { $gte: startOfThisMonth },
+    isDeleted: { $ne: true }
+  });
+  const aiActivityLastMonth = await ActivityLog.countDocuments({
+    module: { $regex: /^ai$/i },
+    timestamp: { $gte: startOfLastMonth, $lt: startOfThisMonth },
+    isDeleted: { $ne: true }
+  });
+  const aiTrend = calculateGrowth(aiActivityThisMonth, aiActivityLastMonth);
+
+  // Storage aggregation
+  const storageAgg = await Media.aggregate([
+    { $match: { isDeleted: { $ne: true } } },
+    { $group: { _id: null, total: { $sum: '$size' } } }
+  ]);
+  const storageUsage = storageAgg[0]?.total || 0;
+
+  // Storage breakdown by client
+  const clientsList = await Client.find({ isDeleted: { $ne: true } }).select('name subdomain');
+  const mediaStorageBreakdown = await Media.aggregate([
+    { $match: { isDeleted: { $ne: true } } },
+    { $group: { _id: '$clientId', storageUsed: { $sum: '$size' } } }
+  ]);
+  const storageMap = {};
+  mediaStorageBreakdown.forEach((item) => {
+    if (item._id) {
+      storageMap[item._id.toString()] = item.storageUsed;
+    }
   });
 
-  // Calculate total analytics logging counts
-  const trafficHits = await Analytics.countDocuments({ isDeleted: { $ne: true } });
+  const storageBreakdown = clientsList.map((client) => {
+    return {
+      clientId: client._id,
+      name: client.name,
+      subdomain: client.subdomain,
+      storageUsed: storageMap[client._id.toString()] || 0
+    };
+  });
+
+  // News breakdown by client
+  const newsBreakdownRaw = await News.aggregate([
+    { $match: { status: 'published', isDeleted: { $ne: true } } },
+    { $group: { _id: '$clientId', count: { $sum: 1 } } }
+  ]);
+  const newsMap = {};
+  newsBreakdownRaw.forEach((item) => {
+    if (item._id) {
+      newsMap[item._id.toString()] = item.count;
+    }
+  });
+
+  const newsBreakdown = clientsList.map((client) => {
+    return {
+      clientId: client._id,
+      name: client.name,
+      subdomain: client.subdomain,
+      newsCount: newsMap[client._id.toString()] || 0
+    };
+  });
+
+  // Calculate storage growth trend based on uploads this month vs last month
+  const storageThisMonthAgg = await Media.aggregate([
+    { $match: { createdAt: { $gte: startOfThisMonth }, isDeleted: { $ne: true } } },
+    { $group: { _id: null, total: { $sum: '$size' } } }
+  ]);
+  const storageThisMonth = storageThisMonthAgg[0]?.total || 0;
+
+  const storageLastMonthAgg = await Media.aggregate([
+    { $match: { createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth }, isDeleted: { $ne: true } } },
+    { $group: { _id: null, total: { $sum: '$size' } } }
+  ]);
+  const storageLastMonth = storageLastMonthAgg[0]?.total || 0;
+  const storageTrend = calculateGrowth(storageThisMonth, storageLastMonth);
+
+  // 4. Charts Generation
+  // Client cumulative growth last 6 months
+  const chartMonths = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    chartMonths.push({
+      date: d,
+      monthName: d.toLocaleString('en-US', { month: 'short' }),
+      year: d.getFullYear(),
+      monthIndex: d.getMonth()
+    });
+  }
+
+  const allClients = await Client.find({ isDeleted: { $ne: true } }).select('createdAt');
+  const clientGrowth = chartMonths.map((m) => {
+    const endOfMonth = new Date(m.year, m.monthIndex + 1, 0, 23, 59, 59, 999);
+    const count = allClients.filter((c) => c.createdAt <= endOfMonth).length;
+    return {
+      month: m.monthName,
+      count
+    };
+  });
+
+  // Revenue history last 6 months
+  const allSubscriptions = await Subscription.find({ isDeleted: { $ne: true } });
+  const revenueHistory = chartMonths.map((m) => {
+    const firstDayOfMonth = new Date(m.year, m.monthIndex, 1);
+    const lastDayOfMonth = new Date(m.year, m.monthIndex + 1, 0, 23, 59, 59, 999);
+
+    let monthlyRev = 0;
+    allSubscriptions.forEach((sub) => {
+      const startedBeforeOrDuring = sub.startDate <= lastDayOfMonth;
+      const endsAfterOrDuring = !sub.endDate || sub.endDate >= firstDayOfMonth;
+      if (startedBeforeOrDuring && endsAfterOrDuring) {
+        monthlyRev += getSubMonthlyValuation(sub);
+      }
+    });
+
+    return {
+      month: m.monthName,
+      amount: Math.round(monthlyRev)
+    };
+  });
 
   return {
-    totalClients,
-    activeClients,
-    revenueMRR: Math.round(totalMRR * 100) / 100, // round to 2 decimals
-    trafficHits
+    clients: {
+      total: totalClients,
+      active: activeClients,
+      suspended: suspendedClients,
+      totalTrend: clientsTotalTrend,
+      activeTrend: clientsActiveTrend,
+      suspendedTrend: clientsSuspendedTrend
+    },
+    revenue: {
+      total: Math.round(monthlyRevenue * 12),
+      monthly: monthlyRevenue,
+      yearly: Math.round(monthlyRevenue * 12),
+      monthlyTrend: revenueTrend
+    },
+    system: {
+      totalNews,
+      newsTrend,
+      newsBreakdown,
+      totalTraffic,
+      trafficTrend,
+      aiUsage,
+      aiTrend,
+      storageUsage,
+      storageTrend,
+      storageBreakdown
+    },
+    charts: {
+      revenueHistory,
+      clientGrowth
+    }
   };
 };
 

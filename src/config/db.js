@@ -26,7 +26,8 @@ const connectDB = async () => {
       const isNetworkError = error.message.includes('ECONNREFUSED') || 
                              error.message.includes('ENOTFOUND') || 
                              error.message.includes('querySrv') || 
-                             error.message.includes('timeout');
+                             error.message.includes('timeout') ||
+                             error.message.includes('ETIMEDOUT');
                              
       if (isNetworkError && config.mongoose.url !== 'mongodb://127.0.0.1:27017/news-saas') {
         logger.warn('Detected network/DNS resolution connectivity issue. Attempting connection to local MongoDB fallback...');

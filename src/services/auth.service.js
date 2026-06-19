@@ -26,7 +26,7 @@ const loginWithEmailAndPassword = async (email, password, ipAddress, userAgent) 
     throw new AppError(httpStatus.UNAUTHORIZED, 'Incorrect email or password');
   }
 
-  // Update last login details and history logs
+  // Update last login details and history logs in memory
   user.lastLogin = new Date();
   user.loginHistory.push({
     ipAddress,
@@ -39,17 +39,20 @@ const loginWithEmailAndPassword = async (email, password, ipAddress, userAgent) 
     user.loginHistory.shift();
   }
 
-  await user.save();
+  // Trigger both user.save() and tenant client subdomain query concurrently
+  const savePromise = user.save();
+  const clientPromise = user.clientId ? Client.findById(user.clientId).lean() : Promise.resolve(null);
 
+  // Generate tokens immediately in memory
   const accessToken = tokenUtil.generateAccessToken(user);
   const refreshToken = tokenUtil.generateRefreshToken(user);
 
+  // Await concurrent database write and read
+  const [, client] = await Promise.all([savePromise, clientPromise]);
+
   let tenantSubdomain = null;
-  if (user.clientId) {
-    const client = await Client.findById(user.clientId);
-    if (client) {
-      tenantSubdomain = client.subdomain;
-    }
+  if (client) {
+    tenantSubdomain = client.subdomain;
   }
 
   return {
@@ -66,6 +69,7 @@ const loginWithEmailAndPassword = async (email, password, ipAddress, userAgent) 
       refreshToken
     }
   };
+
 };
 
 /**

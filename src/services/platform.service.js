@@ -13,6 +13,8 @@ const Media = require('../models/Media');
 const AppError = require('../utils/appError');
 const httpStatus = require('../constants/httpStatus');
 const logger = require('../config/logger');
+const { connection: redis, isRedisReady } = require('../config/redis');
+
 
 /**
  * Resiliently write activity logs without blocking request response on log failure
@@ -314,6 +316,20 @@ const deleteClient = async (clientId, ipAddress, platformOwnerId) => {
  * Aggregate platform statistics (Clients, Active, MRR, Traffic Hits)
  */
 const getDashboardStats = async () => {
+  const cacheKey = 'platform:dashboard:stats';
+
+  // 1. Try to serve from Redis Cache-Aside
+  if (isRedisReady()) {
+    try {
+      const cachedStats = await redis.get(cacheKey);
+      if (cachedStats) {
+        return JSON.parse(cachedStats);
+      }
+    } catch (err) {
+      logger.error(`[Redis Stats Cache Read Error] ${err.message}`, err);
+    }
+  }
+
   const now = new Date();
   const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -333,35 +349,89 @@ const getDashboardStats = async () => {
     }
   };
 
-  // 1. Clients aggregation
-  const totalClients = await Client.countDocuments({ isDeleted: { $ne: true } });
-  const totalClientsLastMonth = await Client.countDocuments({
-    createdAt: { $lt: startOfThisMonth },
-    isDeleted: { $ne: true }
-  });
+  // 2. Fetch all required data points concurrently using Promise.all & .lean()
+  const [
+    totalClients,
+    totalClientsLastMonth,
+    activeClients,
+    activeClientsLastMonth,
+    suspendedClients,
+    suspendedClientsLastMonth,
+    activeSubscriptions,
+    subscriptionsLastMonth,
+    totalNews,
+    totalNewsThisMonth,
+    totalNewsLastMonth,
+    totalTraffic,
+    trafficThisMonth,
+    trafficLastMonth,
+    aiUsageAgg,
+    aiActivityThisMonth,
+    aiActivityLastMonth,
+    storageAgg,
+    clientsList,
+    mediaStorageBreakdown,
+    newsBreakdownRaw,
+    storageThisMonthAgg,
+    storageLastMonthAgg,
+    allSubscriptions
+  ] = await Promise.all([
+    // Clients
+    Client.countDocuments({ isDeleted: { $ne: true } }),
+    Client.countDocuments({ createdAt: { $lt: startOfThisMonth }, isDeleted: { $ne: true } }),
+    Client.countDocuments({ status: 'active', isDeleted: { $ne: true } }),
+    Client.countDocuments({ status: 'active', createdAt: { $lt: startOfThisMonth }, isDeleted: { $ne: true } }),
+    Client.countDocuments({ status: 'suspended', isDeleted: { $ne: true } }),
+    Client.countDocuments({ status: 'suspended', createdAt: { $lt: startOfThisMonth }, isDeleted: { $ne: true } }),
+    // Subscriptions
+    Subscription.find({ status: 'active', isDeleted: { $ne: true } }).lean(),
+    Subscription.find({ status: 'active', startDate: { $lt: startOfThisMonth }, isDeleted: { $ne: true } }).lean(),
+    // News counts
+    News.countDocuments({ status: 'published', isDeleted: { $ne: true } }),
+    News.countDocuments({ status: 'published', publishDate: { $gte: startOfThisMonth }, isDeleted: { $ne: true } }),
+    News.countDocuments({ status: 'published', publishDate: { $gte: startOfLastMonth, $lt: startOfThisMonth }, isDeleted: { $ne: true } }),
+    // Traffic
+    Analytics.countDocuments({ isDeleted: { $ne: true } }),
+    Analytics.countDocuments({ timestamp: { $gte: startOfThisMonth }, isDeleted: { $ne: true } }),
+    Analytics.countDocuments({ timestamp: { $gte: startOfLastMonth, $lt: startOfThisMonth }, isDeleted: { $ne: true } }),
+    // AI aggregates
+    UsageStats.aggregate([
+      { $match: { isDeleted: { $ne: true } } },
+      { $group: { _id: null, total: { $sum: '$aiRequests' } } }
+    ]),
+    ActivityLog.countDocuments({ module: { $regex: /^ai$/i }, timestamp: { $gte: startOfThisMonth }, isDeleted: { $ne: true } }),
+    ActivityLog.countDocuments({ module: { $regex: /^ai$/i }, timestamp: { $gte: startOfLastMonth, $lt: startOfThisMonth }, isDeleted: { $ne: true } }),
+    // Storage
+    Media.aggregate([
+      { $match: { isDeleted: { $ne: true } } },
+      { $group: { _id: null, total: { $sum: '$size' } } }
+    ]),
+    // Clients details (for both breakdowns and charts)
+    Client.find({ isDeleted: { $ne: true } }).select('name subdomain createdAt').lean(),
+    // Breakdowns
+    Media.aggregate([
+      { $match: { isDeleted: { $ne: true } } },
+      { $group: { _id: '$clientId', storageUsed: { $sum: '$size' } } }
+    ]),
+    News.aggregate([
+      { $match: { status: 'published', isDeleted: { $ne: true } } },
+      { $group: { _id: '$clientId', count: { $sum: 1 } } }
+    ]),
+    Media.aggregate([
+      { $match: { createdAt: { $gte: startOfThisMonth }, isDeleted: { $ne: true } } },
+      { $group: { _id: null, total: { $sum: '$size' } } }
+    ]),
+    Media.aggregate([
+      { $match: { createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth }, isDeleted: { $ne: true } } },
+      { $group: { _id: null, total: { $sum: '$size' } } }
+    ]),
+    // All subscriptions for chart history
+    Subscription.find({ isDeleted: { $ne: true } }).lean()
+  ]);
+
   const clientsTotalTrend = calculateGrowth(totalClients, totalClientsLastMonth);
-
-  const activeClients = await Client.countDocuments({ status: 'active', isDeleted: { $ne: true } });
-  const activeClientsLastMonth = await Client.countDocuments({
-    status: 'active',
-    createdAt: { $lt: startOfThisMonth },
-    isDeleted: { $ne: true }
-  });
   const clientsActiveTrend = calculateGrowth(activeClients, activeClientsLastMonth);
-
-  const suspendedClients = await Client.countDocuments({ status: 'suspended', isDeleted: { $ne: true } });
-  const suspendedClientsLastMonth = await Client.countDocuments({
-    status: 'suspended',
-    createdAt: { $lt: startOfThisMonth },
-    isDeleted: { $ne: true }
-  });
   const clientsSuspendedTrend = calculateGrowth(suspendedClients, suspendedClientsLastMonth);
-
-  // 2. Revenue aggregation
-  const activeSubscriptions = await Subscription.find({
-    status: 'active',
-    isDeleted: { $ne: true }
-  });
 
   const getSubMonthlyValuation = (sub) => {
     let monthlyValue = 0;
@@ -374,7 +444,6 @@ const getDashboardStats = async () => {
       else if (sub.plan === 'professional') monthlyValue = 999 / 12;
       else if (sub.plan === 'enterprise') monthlyValue = 2999 / 12;
     } else if (sub.billingPeriod === 'lifetime') {
-      // Amortize lifetime subscription payment over 36 months
       if (sub.plan === 'basic') monthlyValue = 999 / 36;
       else if (sub.plan === 'professional') monthlyValue = 2999 / 36;
       else if (sub.plan === 'enterprise') monthlyValue = 9999 / 36;
@@ -388,12 +457,6 @@ const getDashboardStats = async () => {
   });
   monthlyRevenue = Math.round(monthlyRevenue * 100) / 100;
 
-  // Calculate monthly revenue at the start of this month (i.e. subscriptions active then)
-  const subscriptionsLastMonth = await Subscription.find({
-    status: 'active',
-    startDate: { $lt: startOfThisMonth },
-    isDeleted: { $ne: true }
-  });
   let monthlyRevenueLastMonth = 0;
   subscriptionsLastMonth.forEach((sub) => {
     if (!sub.endDate || sub.endDate >= startOfThisMonth) {
@@ -402,64 +465,14 @@ const getDashboardStats = async () => {
   });
   const revenueTrend = calculateGrowth(monthlyRevenue, monthlyRevenueLastMonth);
 
-  // 3. System stats aggregation
-  const totalNews = await News.countDocuments({ status: 'published', isDeleted: { $ne: true } });
-  const totalNewsThisMonth = await News.countDocuments({
-    status: 'published',
-    publishDate: { $gte: startOfThisMonth },
-    isDeleted: { $ne: true }
-  });
-  const totalNewsLastMonth = await News.countDocuments({
-    status: 'published',
-    publishDate: { $gte: startOfLastMonth, $lt: startOfThisMonth },
-    isDeleted: { $ne: true }
-  });
   const newsTrend = calculateGrowth(totalNewsThisMonth, totalNewsLastMonth);
-
-  const totalTraffic = await Analytics.countDocuments({ isDeleted: { $ne: true } });
-  const trafficThisMonth = await Analytics.countDocuments({
-    timestamp: { $gte: startOfThisMonth },
-    isDeleted: { $ne: true }
-  });
-  const trafficLastMonth = await Analytics.countDocuments({
-    timestamp: { $gte: startOfLastMonth, $lt: startOfThisMonth },
-    isDeleted: { $ne: true }
-  });
   const trafficTrend = calculateGrowth(trafficThisMonth, trafficLastMonth);
 
-  // AI Usage aggregation
-  const aiUsageAgg = await UsageStats.aggregate([
-    { $match: { isDeleted: { $ne: true } } },
-    { $group: { _id: null, total: { $sum: '$aiRequests' } } }
-  ]);
   const aiUsage = aiUsageAgg[0]?.total || 0;
-
-  // Count AI logs in ActivityLog to get monthly breakdown
-  const aiActivityThisMonth = await ActivityLog.countDocuments({
-    module: { $regex: /^ai$/i },
-    timestamp: { $gte: startOfThisMonth },
-    isDeleted: { $ne: true }
-  });
-  const aiActivityLastMonth = await ActivityLog.countDocuments({
-    module: { $regex: /^ai$/i },
-    timestamp: { $gte: startOfLastMonth, $lt: startOfThisMonth },
-    isDeleted: { $ne: true }
-  });
   const aiTrend = calculateGrowth(aiActivityThisMonth, aiActivityLastMonth);
 
-  // Storage aggregation
-  const storageAgg = await Media.aggregate([
-    { $match: { isDeleted: { $ne: true } } },
-    { $group: { _id: null, total: { $sum: '$size' } } }
-  ]);
   const storageUsage = storageAgg[0]?.total || 0;
 
-  // Storage breakdown by client
-  const clientsList = await Client.find({ isDeleted: { $ne: true } }).select('name subdomain');
-  const mediaStorageBreakdown = await Media.aggregate([
-    { $match: { isDeleted: { $ne: true } } },
-    { $group: { _id: '$clientId', storageUsed: { $sum: '$size' } } }
-  ]);
   const storageMap = {};
   mediaStorageBreakdown.forEach((item) => {
     if (item._id) {
@@ -476,11 +489,6 @@ const getDashboardStats = async () => {
     };
   });
 
-  // News breakdown by client
-  const newsBreakdownRaw = await News.aggregate([
-    { $match: { status: 'published', isDeleted: { $ne: true } } },
-    { $group: { _id: '$clientId', count: { $sum: 1 } } }
-  ]);
   const newsMap = {};
   newsBreakdownRaw.forEach((item) => {
     if (item._id) {
@@ -497,22 +505,11 @@ const getDashboardStats = async () => {
     };
   });
 
-  // Calculate storage growth trend based on uploads this month vs last month
-  const storageThisMonthAgg = await Media.aggregate([
-    { $match: { createdAt: { $gte: startOfThisMonth }, isDeleted: { $ne: true } } },
-    { $group: { _id: null, total: { $sum: '$size' } } }
-  ]);
   const storageThisMonth = storageThisMonthAgg[0]?.total || 0;
-
-  const storageLastMonthAgg = await Media.aggregate([
-    { $match: { createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth }, isDeleted: { $ne: true } } },
-    { $group: { _id: null, total: { $sum: '$size' } } }
-  ]);
   const storageLastMonth = storageLastMonthAgg[0]?.total || 0;
   const storageTrend = calculateGrowth(storageThisMonth, storageLastMonth);
 
-  // 4. Charts Generation
-  // Client cumulative growth last 6 months
+  // 3. Charts Generation
   const chartMonths = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -524,18 +521,15 @@ const getDashboardStats = async () => {
     });
   }
 
-  const allClients = await Client.find({ isDeleted: { $ne: true } }).select('createdAt');
   const clientGrowth = chartMonths.map((m) => {
     const endOfMonth = new Date(m.year, m.monthIndex + 1, 0, 23, 59, 59, 999);
-    const count = allClients.filter((c) => c.createdAt <= endOfMonth).length;
+    const count = clientsList.filter((c) => c.createdAt <= endOfMonth).length;
     return {
       month: m.monthName,
       count
     };
   });
 
-  // Revenue history last 6 months
-  const allSubscriptions = await Subscription.find({ isDeleted: { $ne: true } });
   const revenueHistory = chartMonths.map((m) => {
     const firstDayOfMonth = new Date(m.year, m.monthIndex, 1);
     const lastDayOfMonth = new Date(m.year, m.monthIndex + 1, 0, 23, 59, 59, 999);
@@ -555,7 +549,7 @@ const getDashboardStats = async () => {
     };
   });
 
-  return {
+  const stats = {
     clients: {
       total: totalClients,
       active: activeClients,
@@ -587,7 +581,18 @@ const getDashboardStats = async () => {
       clientGrowth
     }
   };
-};
+
+  // 4. Save to Redis Cache with a 5-minute TTL
+  if (isRedisReady()) {
+    try {
+      await redis.set(cacheKey, JSON.stringify(stats), 'EX', 300);
+    } catch (err) {
+      logger.error(`[Redis Stats Cache Write Error] ${err.message}`, err);
+    }
+  }
+
+  return stats;
+};;
 
 module.exports = {
   createWebsite,

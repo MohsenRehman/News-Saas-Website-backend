@@ -53,7 +53,14 @@ const resolveDomain = async (host) => {
   }
   // 6. Otherwise, treat cleanHost as a registered custom domain (e.g. 'whatsgoingonpeshawar.com')
   else {
-    client = await Client.findOne({ customDomain: cleanHost, isDeleted: false });
+    const searchDomain = cleanHost.startsWith('www.') ? cleanHost.substring(4) : cleanHost;
+    client = await Client.findOne({
+      $or: [
+        { customDomain: cleanHost },
+        { customDomain: searchDomain }
+      ],
+      isDeleted: false
+    });
   }
 
   // Save resolved client (or null) to cache for 5 minutes

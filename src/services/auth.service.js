@@ -62,6 +62,7 @@ const loginWithEmailAndPassword = async (email, password, ipAddress, userAgent) 
       email: user.email,
       role: user.role,
       clientId: user.clientId,
+      profileImage: user.profileImage || '',
       tenantSubdomain
     },
     tokens: {

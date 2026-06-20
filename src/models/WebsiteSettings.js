@@ -6,7 +6,8 @@ const socialLinksSchema = new mongoose.Schema({
   twitter: { type: String, default: '' },
   instagram: { type: String, default: '' },
   youtube: { type: String, default: '' },
-  tiktok: { type: String, default: '' }
+  tiktok: { type: String, default: '' },
+  whatsapp: { type: String, default: '' }
 }, { _id: false });
 
 const websiteSettingsSchema = new mongoose.Schema(
@@ -86,6 +87,7 @@ const transformFn = function (doc, ret) {
   ret.twitterUrl = ret.socialLinks?.twitter || '';
   ret.youtubeUrl = ret.socialLinks?.youtube || '';
   ret.tiktokUrl = ret.socialLinks?.tiktok || '';
+  ret.whatsappUrl = ret.socialLinks?.whatsapp || '';
   
   return ret;
 };

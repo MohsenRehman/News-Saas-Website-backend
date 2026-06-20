@@ -311,7 +311,8 @@ const updateWebsiteSettings = async (clientId, settingsData, ipAddress, operator
     twitter: settingsData.twitterUrl !== undefined ? settingsData.twitterUrl : (socialLinks.twitter || ''),
     instagram: socialLinks.instagram || '',
     youtube: settingsData.youtubeUrl !== undefined ? settingsData.youtubeUrl : (socialLinks.youtube || ''),
-    tiktok: settingsData.tiktokUrl !== undefined ? settingsData.tiktokUrl : (socialLinks.tiktok || '')
+    tiktok: settingsData.tiktokUrl !== undefined ? settingsData.tiktokUrl : (socialLinks.tiktok || ''),
+    whatsapp: settingsData.whatsappUrl !== undefined ? settingsData.whatsappUrl : (socialLinks.whatsapp || '')
   };
 
   // Update features

@@ -23,6 +23,9 @@ const resolveDomain = async (host) => {
     cleanHost === 'localhost' ||
     cleanHost === '127.0.0.1' ||
     cleanHost === 'saasnews.com' ||
+    cleanHost === 'www.saasnews.com' ||
+    cleanHost === 'newsverce.online' ||
+    cleanHost === 'www.newsverce.online' ||
     cleanHost.endsWith('.vercel.app')
   ) {
     return null;
@@ -43,8 +46,8 @@ const resolveDomain = async (host) => {
     const subdomain = parts[0];
     client = await Client.findOne({ subdomain, isDeleted: false });
   }
-  // 5. Handle production subdomains (e.g. 'peshawar.saasnews.com')
-  else if (cleanHost.endsWith('.saasnews.com')) {
+  // 5. Handle production subdomains (e.g. 'peshawar.saasnews.com' or 'peshawar.newsverce.online')
+  else if (cleanHost.endsWith('.saasnews.com') || cleanHost.endsWith('.newsverce.online')) {
     const subdomain = parts[0];
     client = await Client.findOne({ subdomain, isDeleted: false });
   }

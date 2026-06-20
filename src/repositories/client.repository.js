@@ -19,6 +19,7 @@ const clearClientCache = async (client) => {
   const promises = [];
   if (client.subdomain) {
     promises.push(cache.del(`domain:${client.subdomain}.saasnews.com`));
+    promises.push(cache.del(`domain:${client.subdomain}.newsverce.online`));
     promises.push(cache.del(`domain:${client.subdomain}.localhost`));
     promises.push(cache.del(`domain:${client.subdomain}.127.0.0.1`));
   }

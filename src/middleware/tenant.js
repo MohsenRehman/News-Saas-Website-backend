@@ -33,7 +33,7 @@ const resolveTenant = async (req, res, next) => {
       // If it resolved to null, but it is NOT the master platform host, it is an invalid domain
       const cleanHost = host ? host.split(':')[0].toLowerCase().trim() : '';
       // Master hosts: local dev, main platform domain, and all Vercel deployment URLs
-      const isMasterHost = ['localhost', '127.0.0.1', 'saasnews.com'].includes(cleanHost)
+      const isMasterHost = ['localhost', '127.0.0.1', 'saasnews.com', 'www.saasnews.com', 'newsverce.online', 'www.newsverce.online'].includes(cleanHost)
         || cleanHost.endsWith('.vercel.app')
         || cleanHost === 'news-saas-website-backend.vercel.app';
 

@@ -51,6 +51,9 @@ const ALLOWED_ORIGINS = [
   'https://news-saas-website-frontend.vercel.app',
   'https://news-saas-website-frontend-35ny.vercel.app',
   'https://saasnews.com',
+  'https://www.saasnews.com',
+  'https://newsverce.online',
+  'https://www.newsverce.online',
 ];
 
 const corsOptions = {

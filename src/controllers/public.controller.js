@@ -6,6 +6,10 @@ const httpStatus = require('../constants/httpStatus');
  */
 const getWebsiteSettings = async (req, res, next) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
     const clientId = req.clientId;
     const settings = await publicService.getWebsiteSettings(clientId);
     return res.success({
@@ -22,6 +26,10 @@ const getWebsiteSettings = async (req, res, next) => {
  */
 const getCategories = async (req, res, next) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     const clientId = req.clientId;
     const categories = await publicService.getCategories(clientId);
     return res.success(categories, 'Categories retrieved successfully.');
